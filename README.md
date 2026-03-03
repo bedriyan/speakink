@@ -28,6 +28,18 @@
 | [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.1-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
 | [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.1-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
 
+### Installation
+
+1. Download the DMG for your Mac.
+2. Open the DMG and drag **Speaky** to the **Applications** folder.
+3. Before first launch, open Terminal and run:
+   ```bash
+   xattr -cr /Applications/Speaky.app
+   ```
+4. Open Speaky from Applications. On first launch, you may need to **right-click > Open**.
+
+> **Why is this needed?** Speaky is open-source and not notarized with Apple ($99/year requirement). The `xattr` command tells macOS you trust this app. You only need to do this once.
+
 ## Features
 
 - **Customizable Hotkey** — Set any keyboard shortcut you want to start/stop recording from anywhere
