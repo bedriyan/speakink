@@ -115,16 +115,8 @@ struct OnboardingPermissionsView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(allGranted ? Theme.success.opacity(0.15) : Theme.amber.opacity(0.12))
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: allGranted ? "checkmark.circle.fill" : "shield.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(allGranted ? Theme.success : Theme.amber)
-                    .contentTransition(.symbolEffect(.replace))
-            }
+            SpeakyAnimationView(animation: allGranted ? .celebration : .neutral)
+                .frame(width: 160, height: 160)
 
             VStack(spacing: 8) {
                 Text("Permissions")
@@ -266,39 +258,20 @@ struct OnboardingDoneView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(Theme.success.opacity(0.15))
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(Theme.success)
-            }
+            SpeakyAnimationView(animation: .celebration)
+                .frame(width: 160, height: 160)
 
             VStack(spacing: 8) {
                 Text("You're all set!")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
 
-                Text("Press your hotkey to start recording. Press again to stop and auto-paste.")
+                Text("Set a hotkey in Settings, then press it to record. Press again to stop and auto-paste.")
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 400)
             }
-
-            HStack(spacing: 16) {
-                Image(systemName: "command")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Theme.amber)
-                Text("Default: Right Command (⌘)")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(14)
-            .background(Theme.bgCard)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
 
             Spacer().frame(height: 8)
 

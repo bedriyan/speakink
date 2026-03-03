@@ -15,6 +15,7 @@ final class SoundEffectService {
         }
         do {
             startPlayer = try AVAudioPlayer(contentsOf: url)
+            startPlayer?.volume = 0.15
             startPlayer?.play()
             // Wait for the sound to finish so caller can mute after
             let duration = startPlayer?.duration ?? 2.0
@@ -31,6 +32,7 @@ final class SoundEffectService {
         }
         do {
             endPlayer = try AVAudioPlayer(contentsOf: url)
+            endPlayer?.volume = 0.15
             endPlayer?.play()
         } catch {
             Self.logger.warning("Failed to play end sound: \(error.localizedDescription, privacy: .public)")

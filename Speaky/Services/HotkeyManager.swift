@@ -91,8 +91,9 @@ final class HotkeyManager: @unchecked Sendable {
     private(set) var isRecordingViaHotkey = false
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "selectedHotkey") ?? ""
-        self.selectedHotkey = HotkeyOption(rawValue: saved) ?? .rightCommand
+        // Always use custom shortcut mode (modifier presets removed)
+        self.selectedHotkey = .custom
+        UserDefaults.standard.set(HotkeyOption.custom.rawValue, forKey: "selectedHotkey")
 
         // Slight delay to ensure app is fully launched
         Task { @MainActor in
@@ -118,14 +119,9 @@ final class HotkeyManager: @unchecked Sendable {
     private func setupEscapeMonitoring() {
         // CGEvent tap captures ESC globally even when other apps consume the key event.
         // NSEvent.addGlobalMonitorForEvents is only an observer and misses consumed events.
-        let escKeyCode = CGKeyCode(Constants.KeyCode.escape)
-
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             // Re-enable tap if it gets disabled by the system
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                if let refcon, let port = Unmanaged<AnyObject>.fromOpaque(refcon).takeUnretainedValue() as? AutoreleasingUnsafeMutablePointer<CFMachPort?> {
-                    // Can't easily re-enable here, handled below
-                }
                 return Unmanaged.passUnretained(event)
             }
 

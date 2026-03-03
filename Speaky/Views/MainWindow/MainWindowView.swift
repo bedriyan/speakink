@@ -26,14 +26,9 @@ struct MainWindowView: View {
 
                         Spacer()
 
-                        HStack(spacing: 8) {
-                            Image(nsImage: NSApp.applicationIconImage)
-                                .resizable()
-                                .frame(width: 22, height: 22)
-                            Text("Speaky")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Theme.textPrimary)
-                        }
+                        Text("Speaky")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -132,13 +127,10 @@ struct MainWindowView: View {
     }
 
     private var hotkeyHint: String {
-        if appState.hotkeyManager.selectedHotkey == .custom {
-            if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording) {
-                return shortcut.description
-            }
-            return "No shortcut set"
+        if let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording) {
+            return shortcut.description
         }
-        return appState.hotkeyManager.selectedHotkey.displayName
+        return "Set a shortcut in Settings"
     }
 
     // MARK: - Last Transcription

@@ -17,31 +17,9 @@ struct SettingsView: View {
         Form {
             // Hotkey
             Section("Hotkey") {
-                KeyboardShortcuts.Recorder("Custom Shortcut:", name: .toggleRecording)
+                HotkeyRecorderRow()
 
-                Text("Or select a modifier key preset:")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
-
-                ForEach(HotkeyManager.HotkeyOption.allCases.filter(\.isModifierKey), id: \.id) { option in
-                    Button {
-                        appState.hotkeyManager.selectedHotkey = option
-                    } label: {
-                        HStack {
-                            Text(option.displayName)
-                                .foregroundStyle(Theme.textPrimary)
-                            Spacer()
-                            if appState.hotkeyManager.selectedHotkey == option {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(Theme.amber)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.handCursor)
-                }
-
-                Text("Modifier keys support push-to-talk (hold) and hands-free (tap) modes.")
+                Text("Supports push-to-talk (hold) and hands-free (tap) modes.")
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
             }
@@ -64,6 +42,11 @@ struct SettingsView: View {
                 Toggle("Clean up filler words", isOn: Binding(
                     get: { settings.cleanUpTranscriptions },
                     set: { settings.cleanUpTranscriptions = $0 }
+                ))
+
+                Toggle("Enable sound effects", isOn: Binding(
+                    get: { settings.soundEffectsEnabled },
+                    set: { settings.soundEffectsEnabled = $0 }
                 ))
             }
 
@@ -372,6 +355,114 @@ struct RatingDots: View {
                     .fill(i <= rating ? color : color.opacity(0.2))
                     .frame(width: 5, height: 5)
             }
+        }
+    }
+}
+
+// MARK: - Hotkey Recorder
+
+struct HotkeyRecorderRow: View {
+    @State private var isRecording = false
+    @State private var currentShortcut: KeyboardShortcuts.Shortcut?
+    @State private var eventMonitor: Any?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Button {
+                if isRecording {
+                    stopRecording()
+                } else {
+                    startRecording()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    if isRecording {
+                        Circle()
+                            .fill(Theme.recording)
+                            .frame(width: 8, height: 8)
+
+                        Text("Press any key combination...")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.textPrimary)
+                    } else if let shortcut = currentShortcut {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.amber)
+
+                        Text(shortcut.description)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Theme.textPrimary)
+                    } else {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.textTertiary)
+
+                        Text("Click to record shortcut")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+
+                    Spacer()
+
+                    if isRecording {
+                        Text("ESC to cancel")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isRecording ? Theme.amber.opacity(0.08) : Theme.bgCard)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(isRecording ? Theme.amber.opacity(0.4) : Color.white.opacity(0.06), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.handCursor)
+
+            if currentShortcut != nil {
+                Button {
+                    KeyboardShortcuts.reset(.toggleRecording)
+                    currentShortcut = nil
+                } label: {
+                    Text("Reset Shortcut")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .buttonStyle(.handCursor)
+            }
+        }
+        .onAppear {
+            currentShortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording)
+        }
+    }
+
+    private func startRecording() {
+        isRecording = true
+        // Use the built-in recorder by temporarily enabling it
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            if event.keyCode == 53 { // ESC
+                stopRecording()
+                return nil
+            }
+
+            if let shortcut = KeyboardShortcuts.Shortcut(event: event) {
+                KeyboardShortcuts.setShortcut(shortcut, for: .toggleRecording)
+                currentShortcut = shortcut
+            }
+            stopRecording()
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
         }
     }
 }

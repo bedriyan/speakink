@@ -25,25 +25,27 @@
 
 | Build | Architecture | Default Engine |
 |-------|-------------|----------------|
-| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.0-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
-| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.0-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
+| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
+| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
 
 ## Features
 
-- **Global Hotkey** — Modifier key or custom shortcut to start/stop recording from anywhere
+- **Customizable Hotkey** — Set any keyboard shortcut you want to start/stop recording from anywhere
 - **Push-to-Talk & Hands-Free** — Hold to record, or tap to toggle
-- **Local Transcription** — Whisper and Parakeet models run on-device; audio never leaves your Mac
-- **Cloud Transcription** — Groq Whisper API for fast cloud-based transcription
+- **Local Transcription** — The app ships with default models (Parakeet V3 for Apple Silicon, Whisper Medium Q5 for Intel), but you can download any model from the built-in list or import your own custom Whisper model
+- **Cloud Transcription** — Optionally use Groq Whisper API for fast cloud-based transcription with your own API key
 - **Auto-Paste** — Transcribed text is pasted at your cursor automatically
 - **Smart Text Cleanup** — Removes filler words, fixes capitalization and spacing
+- **Sound Effects** — Audio cues when recording starts and transcription completes (can be disabled in Settings)
 - **Speaky Mascot** — Animated character shows recording/transcribing state in the notch and main window
-- **Sound Effects** — Audio cues when recording starts and transcription completes
 - **Dynamic Notch Overlay** — Live waveform, timer, and Speaky animation in the macOS notch
 - **System Audio Muting** — Optionally mutes system audio while recording
 - **Multi-Model Support** — Download and switch between 10+ transcription models
 - **Custom Model Import** — Import your own Whisper `.bin` models
 
 ## Supported Models
+
+The app comes with a default model pre-downloaded during onboarding, but you can switch to any of these at any time:
 
 | Model | Type | Size | Speed | Accuracy | Platform |
 |-------|------|------|-------|----------|----------|
@@ -58,6 +60,8 @@
 | Whisper Tiny | Local (whisper.cpp) | ~75 MB | 5/5 | 1/5 | Both |
 | Whisper Large v1 | Local (whisper.cpp) | ~2.9 GB | 1/5 | 4/5 | Both |
 | Whisper Large v2 | Local (whisper.cpp) | ~2.9 GB | 1/5 | 5/5 | Both |
+
+You can also import any custom Whisper `.bin` model via Settings > Advanced > Import Custom Whisper Model.
 
 ## Build from Source
 

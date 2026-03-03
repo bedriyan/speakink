@@ -21,16 +21,8 @@ struct OnboardingModelDownloadView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(isDownloaded ? Theme.success.opacity(0.15) : Theme.amber.opacity(0.12))
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: isDownloaded ? "checkmark.circle.fill" : "brain")
-                    .font(.system(size: 44))
-                    .foregroundStyle(isDownloaded ? Theme.success : Theme.amber)
-                    .contentTransition(.symbolEffect(.replace))
-            }
+            SpeakyAnimationView(animation: isDownloaded ? .celebration : .listening)
+                .frame(width: 160, height: 160)
 
             VStack(spacing: 8) {
                 Text("Downloading AI Model")

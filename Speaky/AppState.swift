@@ -125,9 +125,11 @@ final class AppState {
 
             showNotch()
 
-            // Play start sound, then mute system audio after it finishes
+            // Play start sound (if enabled), then mute system audio after it finishes
             Task {
-                await soundEffect.playStartAndWait()
+                if settings.soundEffectsEnabled {
+                    await soundEffect.playStartAndWait()
+                }
                 if settings.muteSystemAudio {
                     audioControl.mute()
                 }
@@ -217,7 +219,9 @@ final class AppState {
                 if settings.autoPaste {
                     pasteService.paste(finalText)
                 }
-                soundEffect.playEnd()
+                if settings.soundEffectsEnabled {
+                    soundEffect.playEnd()
+                }
                 state = .idle
                 showingCelebration = true
                 scheduleEngineUnload()
