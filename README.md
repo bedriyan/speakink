@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app-icon.png" width="128" height="128" alt="Speaky Icon">
+  <img src="https://raw.githubusercontent.com/bedriyan/speaky/main/app-icon.png" width="128" height="128" alt="Speaky Icon">
 </p>
 
 <h1 align="center">Speaky</h1>
@@ -25,8 +25,8 @@
 
 | Build | Architecture | Default Engine |
 |-------|-------------|----------------|
-| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
-| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
+| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.1-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
+| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.1-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
 
 ## Features
 
