@@ -5,7 +5,7 @@ import AppKit
 import os
 
 extension KeyboardShortcuts.Name {
-    nonisolated(unsafe) static let toggleRecording = Self("toggleRecording")
+    nonisolated(unsafe) static let toggleRecording = Self("toggleRecording", default: .init(.space, modifiers: .option))
 }
 
 @Observable

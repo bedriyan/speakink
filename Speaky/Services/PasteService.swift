@@ -24,8 +24,6 @@ final class PasteService: @unchecked Sendable {
         // Check accessibility - if not trusted, just leave text on clipboard
         guard AXIsProcessTrusted() else {
             logger.warning("Accessibility not trusted — text copied to clipboard only. Please grant Accessibility in System Settings.")
-            // Prompt user to grant
-            Self.requestAccessibility()
             return
         }
 
