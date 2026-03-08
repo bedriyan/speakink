@@ -373,4 +373,20 @@ final class HotkeyManager: @unchecked Sendable {
         }
         return true
     }
+
+    deinit {
+        // Release system resources that would otherwise leak.
+        // These Core Foundation and NSEvent calls are safe from any thread at teardown.
+        if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = localEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = localEscapeMonitor { NSEvent.removeMonitor(monitor) }
+        if let source = escapeTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        if let port = escapeTapPort {
+            CGEvent.tapEnable(tap: port, enable: false)
+        }
+        fnDebounceTask?.cancel()
+        KeyboardShortcuts.removeAllHandlers()
+    }
 }
