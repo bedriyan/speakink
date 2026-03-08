@@ -169,28 +169,12 @@ final class AudioRecorder: @unchecked Sendable {
 }
 
 enum AudioRecorderError: LocalizedError {
-    case componentNotFound
-    case failedToCreateUnit(OSStatus)
-    case failedToEnableInput(OSStatus)
-    case failedToDisableOutput(OSStatus)
-    case failedToSetDevice(OSStatus)
     case failedToSetFormat(OSStatus)
-    case failedToSetCallback(OSStatus)
-    case failedToInitialize(OSStatus)
-    case failedToStart(OSStatus)
     case noOutputURL
 
     var errorDescription: String? {
         switch self {
-        case .componentNotFound: "Audio component not found"
-        case .failedToCreateUnit(let s): "Failed to create audio unit: \(s)"
-        case .failedToEnableInput(let s): "Failed to enable input: \(s)"
-        case .failedToDisableOutput(let s): "Failed to disable output: \(s)"
-        case .failedToSetDevice(let s): "Failed to set device: \(s)"
         case .failedToSetFormat(let s): "Failed to set format: \(s)"
-        case .failedToSetCallback(let s): "Failed to set callback: \(s)"
-        case .failedToInitialize(let s): "Failed to initialize: \(s)"
-        case .failedToStart(let s): "Failed to start: \(s)"
         case .noOutputURL: "No output URL"
         }
     }
