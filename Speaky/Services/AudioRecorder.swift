@@ -39,17 +39,20 @@ final class AudioRecorder: @unchecked Sendable {
 
             if deviceExists {
                 let inputNode = engine.inputNode
-                var deviceIDVar = deviceID
-                let size = UInt32(MemoryLayout<AudioDeviceID>.size)
-                let status = AudioUnitSetProperty(
-                    inputNode.audioUnit!,
-                    kAudioOutputUnitProperty_CurrentDevice,
-                    kAudioUnitScope_Global, 0,
-                    &deviceIDVar, size
-                )
-                if status != noErr {
-                    logger.warning("Failed to set device \(deviceID) (status \(status)) — falling back to system default")
-                    // Fall through to use system default
+                if let audioUnit = inputNode.audioUnit {
+                    var deviceIDVar = deviceID
+                    let size = UInt32(MemoryLayout<AudioDeviceID>.size)
+                    let status = AudioUnitSetProperty(
+                        audioUnit,
+                        kAudioOutputUnitProperty_CurrentDevice,
+                        kAudioUnitScope_Global, 0,
+                        &deviceIDVar, size
+                    )
+                    if status != noErr {
+                        logger.warning("Failed to set device \(deviceID) (status \(status)) — falling back to system default")
+                    }
+                } else {
+                    logger.warning("Audio unit unavailable for input node — using system default device")
                 }
             } else {
                 logger.warning("Selected device \(deviceID) not available — using system default")
