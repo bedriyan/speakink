@@ -405,38 +405,33 @@ final class AppState {
         audioFileURL: URL,
         language: String
     ) async throws -> TranscriptionResult {
-        // Attempt 1: transcribe with 120s timeout
         do {
-            return try await withThrowingTaskGroup(of: TranscriptionResult.self) { group in
-                group.addTask {
-                    try await engine.transcribe(audioFileURL: audioFileURL, language: language)
-                }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(Constants.Timing.transcriptionTimeout))
-                    throw TranscriptionError.engineError("Transcription timed out after \(Int(Constants.Timing.transcriptionTimeout)) seconds")
-                }
-                let result = try await group.next()!
-                group.cancelAll()
-                return result
-            }
+            return try await performTimedTranscription(engine: engine, audioFileURL: audioFileURL, language: language)
         } catch {
             appStateLogger.warning("Transcription attempt 1 failed: \(error.localizedDescription, privacy: .public). Retrying with fresh engine...")
-
-            // Attempt 2: reload engine and retry ONCE (with same timeout)
             await unloadCurrentEngine()
             let freshEngine = try await resolveEngine()
-            return try await withThrowingTaskGroup(of: TranscriptionResult.self) { group in
-                group.addTask {
-                    try await freshEngine.transcribe(audioFileURL: audioFileURL, language: language)
-                }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(Constants.Timing.transcriptionTimeout))
-                    throw TranscriptionError.engineError("Transcription retry timed out after \(Int(Constants.Timing.transcriptionTimeout)) seconds")
-                }
-                let result = try await group.next()!
-                group.cancelAll()
-                return result
+            return try await performTimedTranscription(engine: freshEngine, audioFileURL: audioFileURL, language: language)
+        }
+    }
+
+    /// Run a single transcription with a timeout guard.
+    private func performTimedTranscription(
+        engine: any TranscriptionEngine,
+        audioFileURL: URL,
+        language: String
+    ) async throws -> TranscriptionResult {
+        try await withThrowingTaskGroup(of: TranscriptionResult.self) { group in
+            group.addTask {
+                try await engine.transcribe(audioFileURL: audioFileURL, language: language)
             }
+            group.addTask {
+                try await Task.sleep(for: .seconds(Constants.Timing.transcriptionTimeout))
+                throw TranscriptionError.engineError("Transcription timed out after \(Int(Constants.Timing.transcriptionTimeout)) seconds")
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 }
