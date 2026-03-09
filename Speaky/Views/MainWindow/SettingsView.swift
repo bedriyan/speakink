@@ -1,10 +1,13 @@
 import SwiftUI
+import AVFoundation
 @preconcurrency import KeyboardShortcuts
 
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @State private var inputDevices: [AudioControlService.AudioDeviceInfo] = []
+    @State private var micGranted = false
+    @State private var micDenied = false
     @State private var accessibilityGranted = false
     @State private var pollTimer: Timer?
     @State private var groqAPIKey: String = ""
@@ -38,16 +41,44 @@ struct SettingsView: View {
                     get: { settings.autoPaste },
                     set: { settings.autoPaste = $0 }
                 ))
+                .contentShape(Rectangle())
+                .onTapGesture { settings.autoPaste.toggle() }
 
                 Toggle("Clean up filler words", isOn: Binding(
                     get: { settings.cleanUpTranscriptions },
                     set: { settings.cleanUpTranscriptions = $0 }
                 ))
+                .contentShape(Rectangle())
+                .onTapGesture { settings.cleanUpTranscriptions.toggle() }
 
                 Toggle("Enable sound effects", isOn: Binding(
                     get: { settings.soundEffectsEnabled },
                     set: { settings.soundEffectsEnabled = $0 }
                 ))
+                .contentShape(Rectangle())
+                .onTapGesture { settings.soundEffectsEnabled.toggle() }
+
+                Toggle("Check for updates automatically", isOn: Binding(
+                    get: { settings.checkForUpdates },
+                    set: { newValue in
+                        settings.checkForUpdates = newValue
+                        if newValue {
+                            appState.updateService.startPeriodicChecks()
+                        } else {
+                            appState.updateService.stopPeriodicChecks()
+                        }
+                    }
+                ))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    let newValue = !settings.checkForUpdates
+                    settings.checkForUpdates = newValue
+                    if newValue {
+                        appState.updateService.startPeriodicChecks()
+                    } else {
+                        appState.updateService.stopPeriodicChecks()
+                    }
+                }
             }
 
             // Audio Input
@@ -56,7 +87,7 @@ struct SettingsView: View {
                     get: { settings.selectedAudioDevice },
                     set: { settings.selectedAudioDevice = $0 }
                 )) {
-                    Text("System Default").tag(nil as UInt32?)
+                    Text("Auto (Built-in Mic)").tag(nil as UInt32?)
                     ForEach(inputDevices) { device in
                         Text(device.name).tag(device.id as UInt32?)
                     }
@@ -66,10 +97,44 @@ struct SettingsView: View {
                     get: { settings.muteSystemAudio },
                     set: { settings.muteSystemAudio = $0 }
                 ))
+                .contentShape(Rectangle())
+                .onTapGesture { settings.muteSystemAudio.toggle() }
             }
 
             // Permissions
             Section("Permissions") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Microphone Access")
+                            .font(.body)
+                        Text("Required for recording audio.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    if micGranted {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.success)
+                    } else if micDenied {
+                        Button("Open Settings") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .foregroundStyle(Theme.amber)
+                    } else {
+                        Button("Grant Access") {
+                            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                                DispatchQueue.main.async {
+                                    micGranted = granted
+                                    micDenied = !granted
+                                }
+                            }
+                        }
+                        .foregroundStyle(Theme.amber)
+                    }
+                }
+
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Accessibility Access")
@@ -93,7 +158,25 @@ struct SettingsView: View {
 
             // Advanced (collapsed by default)
             Section {
-                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showAdvanced.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("Advanced")
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                            .rotationEffect(.degrees(showAdvanced ? 90 : 0))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.handCursor)
+
+                if showAdvanced {
                     // AI Model
                     VStack(alignment: .leading, spacing: 8) {
                         Text("AI Model")
@@ -198,13 +281,23 @@ struct SettingsView: View {
         }
         .onAppear {
             inputDevices = AudioControlService.inputDevices()
+            let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            micGranted = micStatus == .authorized
+            micDenied = micStatus == .denied
             accessibilityGranted = PasteService.checkAccessibility()
             groqAPIKey = KeychainHelper.read(service: Constants.keychainService, account: "groq-api-key") ?? ""
             pollTimer = Timer.scheduledTimer(withTimeInterval: Constants.Timing.permissionPollInterval, repeats: true) { _ in
                 Task { @MainActor in
-                    let current = PasteService.checkAccessibility()
-                    if current != accessibilityGranted {
-                        accessibilityGranted = current
+                    let newAccessibility = PasteService.checkAccessibility()
+                    if newAccessibility != accessibilityGranted {
+                        accessibilityGranted = newAccessibility
+                    }
+                    let newMicStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                    let newMicGranted = newMicStatus == .authorized
+                    let newMicDenied = newMicStatus == .denied
+                    if newMicGranted != micGranted || newMicDenied != micDenied {
+                        micGranted = newMicGranted
+                        micDenied = newMicDenied
                     }
                 }
             }

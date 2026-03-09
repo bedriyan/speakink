@@ -115,3 +115,13 @@ final class MockModelManager: ModelManaging, @unchecked Sendable {
         downloadedModels.remove(model.id)
     }
 }
+
+// MARK: - Mock Playback Controller
+
+final class MockPlaybackController: PlaybackControlling, @unchecked Sendable {
+    var pauseCount = 0
+    var resumeCount = 0
+
+    func pause() { pauseCount += 1 }
+    func resume() { resumeCount += 1 }
+}

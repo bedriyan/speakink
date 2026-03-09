@@ -16,6 +16,7 @@ final class TranscriptionCoordinator {
     let modelManager: any ModelManaging
     let deviceGuard: any DeviceGuarding
     let soundEffect: any SoundEffecting
+    let playbackController: any PlaybackControlling
 
     private(set) var currentEngine: (any TranscriptionEngine)?
     private var currentEngineModelID: String?
@@ -31,7 +32,8 @@ final class TranscriptionCoordinator {
         audioControl: any AudioControlling = AudioControlService(),
         modelManager: any ModelManaging = ModelManager(),
         deviceGuard: any DeviceGuarding = DeviceGuard(),
-        soundEffect: any SoundEffecting = SoundEffectService()
+        soundEffect: any SoundEffecting = SoundEffectService(),
+        playbackController: any PlaybackControlling = PlaybackController()
     ) {
         self.settings = settings
         self.audioRecorder = audioRecorder
@@ -40,6 +42,7 @@ final class TranscriptionCoordinator {
         self.modelManager = modelManager
         self.deviceGuard = deviceGuard
         self.soundEffect = soundEffect
+        self.playbackController = playbackController
     }
 
     // MARK: - Engine Management
@@ -117,23 +120,31 @@ final class TranscriptionCoordinator {
 
     // MARK: - Recording
 
-    /// Starts recording. Runs AVAudioEngine setup off the main thread to avoid blocking the UI
-    /// when CoreAudio/HAL is slow (e.g. device enumeration, permissions).
-    func startRecording(onLevelsUpdate: @escaping @Sendable ([Float]) -> Void) async throws {
+    func startRecording(onLevelsUpdate: @escaping @Sendable ([Float]) -> Void) throws {
         engineUnloadTask?.cancel()
         engineUnloadTask = nil
 
+        // Pause background media IMMEDIATELY so the user hears silence right away.
+        if settings.muteSystemAudio {
+            playbackController.pause()
+        }
+
         levelMonitor = AudioLevelMonitor(onLevels: onLevelsUpdate)
-        let deviceID = settings.selectedAudioDevice
-        let monitor = levelMonitor!
 
-        try await Task.detached(priority: .userInitiated) {
-            try audioRecorder.start(deviceID: deviceID, levelMonitor: monitor)
-        }.value
+        // Resolve device ID: when "Auto" (nil), prefer built-in mic to avoid
+        // Bluetooth hijacking the input device when headphones connect.
+        let deviceID: UInt32?
+        if let selected = settings.selectedAudioDevice {
+            deviceID = selected
+        } else {
+            deviceID = AudioControlService.builtInInputDevice()?.id
+        }
 
-        let deviceDesc = deviceID.map(String.init) ?? "default"
+        try audioRecorder.start(deviceID: deviceID, levelMonitor: levelMonitor)
+        let deviceDesc = deviceID.map(String.init) ?? "system-default"
         logger.info("Recording started — device: \(deviceDesc, privacy: .public)")
 
+        // Lock to resolved device so Bluetooth changes don't hijack recording
         if let deviceID {
             deviceGuard.lock(to: deviceID)
         }
@@ -152,6 +163,7 @@ final class TranscriptionCoordinator {
         let url = try audioRecorder.stop()
         levelMonitor = nil
         audioControl.unmute()
+        playbackController.resume()
         deviceGuard.unlock()
         logger.info("Recording stopped — beginning transcription")
         return url
@@ -166,6 +178,7 @@ final class TranscriptionCoordinator {
         }
         levelMonitor = nil
         audioControl.unmute()
+        playbackController.resume()
         deviceGuard.unlock()
     }
 
@@ -194,6 +207,20 @@ final class TranscriptionCoordinator {
         }
         if settings.soundEffectsEnabled {
             soundEffect.playEnd()
+        }
+
+        return finalText
+    }
+
+    // MARK: - Retranscribe
+
+    func retranscribe(audioFileURL: URL) async throws -> String {
+        let engine = try await resolveEngine()
+        let result = try await engine.transcribe(audioFileURL: audioFileURL, language: settings.language)
+
+        var finalText = result.text
+        if settings.cleanUpTranscriptions {
+            finalText = TextCleanupService.clean(finalText)
         }
 
         return finalText

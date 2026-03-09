@@ -35,6 +35,9 @@ final class AppSettings {
     var soundEffectsEnabled: Bool {
         didSet { UserDefaults.standard.set(soundEffectsEnabled, forKey: "soundEffectsEnabled") }
     }
+    var checkForUpdates: Bool {
+        didSet { UserDefaults.standard.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
     var cleanupInterval: String {
         didSet { UserDefaults.standard.set(cleanupInterval, forKey: "cleanupInterval") }
     }
@@ -82,6 +85,7 @@ final class AppSettings {
         self.cleanUpTranscriptions = UserDefaults.standard.object(forKey: "cleanUpTranscriptions") as? Bool ?? true
         self.autoUnloadTimeout = UserDefaults.standard.object(forKey: "autoUnloadTimeout") as? TimeInterval ?? 300
         self.soundEffectsEnabled = UserDefaults.standard.object(forKey: "soundEffectsEnabled") as? Bool ?? true
+        self.checkForUpdates = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true
         self.cleanupInterval = UserDefaults.standard.string(forKey: "cleanupInterval") ?? "Never"
         let deviceVal = UserDefaults.standard.object(forKey: "selectedAudioDevice") as? UInt32
         self.selectedAudioDevice = deviceVal

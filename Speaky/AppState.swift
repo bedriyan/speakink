@@ -28,6 +28,7 @@ final class AppState {
     let settings = AppSettings()
     let hotkeyManager = HotkeyManager()
     let modelManager = ModelManager()
+    let updateService = UpdateService()
     private(set) lazy var coordinator: TranscriptionCoordinator = TranscriptionCoordinator(
         settings: settings,
         modelManager: modelManager
@@ -80,6 +81,7 @@ final class AppState {
         case .recording:
             stopRecordingAndTranscribe()
         case .transcribing:
+            // Allow cancelling a stuck transcription
             cancelTranscription()
         }
     }
@@ -87,27 +89,32 @@ final class AppState {
     // MARK: - Recording
 
     private func startRecording() {
-        Task {
-            do {
-                try await coordinator.startRecording { [weak self] levels in
-                    Task { @MainActor in
-                        self?.audioLevels = levels
-                    }
+        do {
+            try coordinator.startRecording { [weak self] levels in
+                Task { @MainActor in
+                    self?.audioLevels = levels
                 }
-                state = .recording
-                recordingStartTime = Date()
-                showingCancelWarning = false
-                showingCelebration = false
-                audioLevels = Array(repeating: 0, count: 30)
-                showNotch()
-                Task {
-                    await coordinator.playStartSoundAndMute()
-                }
-            } catch {
-                appStateLogger.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
-                state = .error("Failed to start recording: \(error.localizedDescription)")
-                coordinator.audioControl.unmute()
             }
+
+            state = .recording
+            recordingStartTime = Date()
+            showingCancelWarning = false
+            showingCelebration = false
+            audioLevels = Array(repeating: 0, count: 30)
+
+            showNotch()
+
+            // Play start sound (if enabled), then apply system-level mute after it finishes.
+            // Media is already paused above, so background audio is silent during the sound.
+            Task {
+                await coordinator.playStartSoundAndMute()
+            }
+
+        } catch {
+            appStateLogger.error("Failed to start recording: \(error.localizedDescription, privacy: .public)")
+            state = .error("Failed to start recording: \(error.localizedDescription)")
+            coordinator.playbackController.resume()
+            coordinator.audioControl.unmute()
         }
     }
 
@@ -120,6 +127,7 @@ final class AppState {
             appStateLogger.error("Failed to stop recording: \(error.localizedDescription, privacy: .public)")
             state = .error("Failed to stop recording: \(error.localizedDescription)")
             coordinator.audioControl.unmute()
+            coordinator.playbackController.resume()
             hideNotch()
             return
         }
@@ -133,6 +141,7 @@ final class AppState {
 
         transcriptionTask = Task {
             defer {
+                // Clean up temp audio file AFTER all retry attempts complete
                 hideNotch()
                 recordingStartTime = nil
                 transcriptionTask = nil
@@ -150,6 +159,7 @@ final class AppState {
                 savedAudioPath = savedAudioURL.path
             } catch {
                 appStateLogger.warning("Failed to persist audio file: \(error.localizedDescription, privacy: .public)")
+                // Non-fatal: continue without persisted audio
             }
 
             do {
@@ -160,6 +170,7 @@ final class AppState {
 
                 lastTranscription = finalText
 
+                // Save to SwiftData
                 saveTranscription(
                     text: finalText,
                     duration: recordingDuration,
@@ -177,6 +188,7 @@ final class AppState {
                 state = .error("Transcription failed: \(errorMsg)")
                 coordinator.scheduleEngineUnload()
 
+                // Save failed attempt too
                 saveTranscription(
                     text: "[Transcription failed: \(errorMsg)]",
                     duration: recordingDuration,
@@ -216,6 +228,8 @@ final class AppState {
         self.notch = notch
         Task {
             await notch.expand()
+            // Force dark appearance on the overlay window so it renders dark
+            // on all displays regardless of system appearance setting
             notch.windowController?.window?.appearance = NSAppearance(named: .darkAqua)
         }
     }
@@ -235,8 +249,10 @@ final class AppState {
         guard isRecording else { return }
 
         if showingCancelWarning {
+            // Second ESC → cancel recording
             cancelRecording()
         } else {
+            // First ESC → show warning
             showingCancelWarning = true
             cancelWarningDismissTask?.cancel()
             cancelWarningDismissTask = Task {
@@ -263,5 +279,28 @@ final class AppState {
         state = .idle
         hideNotch()
         appStateLogger.info("Transcription cancelled by user")
+    }
+
+    // MARK: - Retranscribe
+
+    func retranscribe(_ transcription: Transcription) async throws {
+        guard let audioPath = transcription.audioFileURL else {
+            throw TranscriptionError.engineError("Audio file not available")
+        }
+        let audioURL = URL(fileURLWithPath: audioPath)
+        guard FileManager.default.fileExists(atPath: audioPath) else {
+            throw TranscriptionError.engineError("Audio file no longer exists")
+        }
+
+        let finalText = try await coordinator.retranscribe(audioFileURL: audioURL)
+
+        transcription.text = finalText
+        transcription.modelID = settings.selectedModel.id
+        transcription.language = settings.language
+        transcription.date = Date()
+
+        if let modelContext {
+            try modelContext.save()
+        }
     }
 }

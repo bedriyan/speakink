@@ -106,7 +106,7 @@ struct OnboardingPermissionsView: View {
     @State private var micGranted = false
     @State private var micDenied = false
     @State private var accessibilityGranted = false
-    @State private var checkTimer: Timer?
+    @State private var pollTimer: Timer?
     @State private var showContent = false
 
     private var allGranted: Bool {
@@ -130,12 +130,13 @@ struct OnboardingPermissionsView: View {
                     .frame(maxWidth: 420)
             }
 
-            // Permission cards
+            // Permission cards — microphone first
             VStack(spacing: 12) {
                 permissionCard(
                     icon: "mic.fill",
                     title: "Microphone",
                     granted: micGranted,
+                    denied: micDenied,
                     action: requestMicPermission
                 )
 
@@ -143,6 +144,7 @@ struct OnboardingPermissionsView: View {
                     icon: "accessibility",
                     title: "Accessibility",
                     granted: accessibilityGranted,
+                    denied: false,
                     action: requestAccessibility
                 )
             }
@@ -166,6 +168,7 @@ struct OnboardingPermissionsView: View {
         .offset(y: showContent ? 0 : 20)
         .onAppear {
             checkPermissions()
+            startPolling()
             withAnimation(.easeOut(duration: 0.5)) { showContent = true }
 
             // Auto-advance if both already granted
@@ -176,11 +179,12 @@ struct OnboardingPermissionsView: View {
             }
         }
         .onDisappear {
-            checkTimer?.invalidate()
+            pollTimer?.invalidate()
+            pollTimer = nil
         }
     }
 
-    private func permissionCard(icon: String, title: String, granted: Bool, action: @escaping () -> Void) -> some View {
+    private func permissionCard(icon: String, title: String, granted: Bool, denied: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 20))
@@ -196,6 +200,13 @@ struct OnboardingPermissionsView: View {
             if granted {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.success)
+            } else if denied {
+                Button("Open Settings") {
+                    openSystemSettings()
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.amber)
+                .buttonStyle(.handCursor)
             } else {
                 Button("Grant") {
                     action()
@@ -217,12 +228,38 @@ struct OnboardingPermissionsView: View {
     }
 
     private func checkPermissions() {
-        micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        micDenied = AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        micGranted = micStatus == .authorized
+        micDenied = micStatus == .denied
         accessibilityGranted = AXIsProcessTrusted()
     }
 
+    /// Poll both permissions so the UI updates in real-time when user grants from System Settings
+    private func startPolling() {
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor in
+                let newMicStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+                let newMicGranted = newMicStatus == .authorized
+                let newMicDenied = newMicStatus == .denied
+                let newAccessibility = AXIsProcessTrusted()
+
+                if newMicGranted != micGranted || newMicDenied != micDenied || newAccessibility != accessibilityGranted {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        micGranted = newMicGranted
+                        micDenied = newMicDenied
+                        accessibilityGranted = newAccessibility
+                    }
+                }
+            }
+        }
+    }
+
     private func requestMicPermission() {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        if status == .denied {
+            openSystemSettings()
+            return
+        }
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             DispatchQueue.main.async {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
@@ -235,16 +272,11 @@ struct OnboardingPermissionsView: View {
 
     private func requestAccessibility() {
         PasteService.requestAccessibility()
-        checkTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            let trusted = AXIsProcessTrusted()
-            if trusted {
-                checkTimer?.invalidate()
-                DispatchQueue.main.async {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                        accessibilityGranted = true
-                    }
-                }
-            }
+    }
+
+    private func openSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+            NSWorkspace.shared.open(url)
         }
     }
 }

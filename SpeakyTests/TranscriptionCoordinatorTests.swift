@@ -12,8 +12,9 @@ struct TranscriptionCoordinatorTests {
         audioControl: MockAudioControl = MockAudioControl(),
         modelManager: MockModelManager = MockModelManager(),
         deviceGuard: MockDeviceGuard = MockDeviceGuard(),
-        soundEffect: MockSoundEffect = MockSoundEffect()
-    ) -> (TranscriptionCoordinator, MockAudioRecorder, MockPasteService, MockAudioControl, MockDeviceGuard, MockSoundEffect) {
+        soundEffect: MockSoundEffect = MockSoundEffect(),
+        playbackController: MockPlaybackController = MockPlaybackController()
+    ) -> (TranscriptionCoordinator, MockAudioRecorder, MockPasteService, MockAudioControl, MockDeviceGuard, MockSoundEffect, MockPlaybackController) {
         let settings = AppSettings()
         let coordinator = TranscriptionCoordinator(
             settings: settings,
@@ -22,21 +23,22 @@ struct TranscriptionCoordinatorTests {
             audioControl: audioControl,
             modelManager: modelManager,
             deviceGuard: deviceGuard,
-            soundEffect: soundEffect
+            soundEffect: soundEffect,
+            playbackController: playbackController
         )
-        return (coordinator, audioRecorder, pasteService, audioControl, deviceGuard, soundEffect)
+        return (coordinator, audioRecorder, pasteService, audioControl, deviceGuard, soundEffect, playbackController)
     }
 
     @Test("startRecording calls audio recorder")
-    func startRecordingCallsRecorder() async throws {
+    func startRecordingCallsRecorder() throws {
         let recorder = MockAudioRecorder()
-        let (coordinator, _, _, _, _, _) = makeCoordinator(audioRecorder: recorder)
-        try await coordinator.startRecording { _ in }
+        let (coordinator, _, _, _, _, _, _) = makeCoordinator(audioRecorder: recorder)
+        try coordinator.startRecording { _ in }
         #expect(recorder.startCalled)
     }
 
     @Test("startRecording locks device guard when device is selected")
-    func startRecordingLocksDevice() async throws {
+    func startRecordingLocksDevice() throws {
         let guard_ = MockDeviceGuard()
         let settings = AppSettings()
         settings.selectedAudioDevice = 42
@@ -47,13 +49,33 @@ struct TranscriptionCoordinatorTests {
             audioControl: MockAudioControl(),
             modelManager: MockModelManager(),
             deviceGuard: guard_,
-            soundEffect: MockSoundEffect()
+            soundEffect: MockSoundEffect(),
+            playbackController: MockPlaybackController()
         )
-        try await coordinator.startRecording { _ in }
+        try coordinator.startRecording { _ in }
         #expect(guard_.lockedDeviceID == 42)
     }
 
-    @Test("stopRecording unmutes audio and unlocks device")
+    @Test("startRecording pauses playback when mute enabled")
+    func startRecordingPausesPlayback() throws {
+        let playback = MockPlaybackController()
+        let settings = AppSettings()
+        settings.muteSystemAudio = true
+        let coordinator = TranscriptionCoordinator(
+            settings: settings,
+            audioRecorder: MockAudioRecorder(),
+            pasteService: MockPasteService(),
+            audioControl: MockAudioControl(),
+            modelManager: MockModelManager(),
+            deviceGuard: MockDeviceGuard(),
+            soundEffect: MockSoundEffect(),
+            playbackController: playback
+        )
+        try coordinator.startRecording { _ in }
+        #expect(playback.pauseCount == 1)
+    }
+
+    @Test("stopRecording unmutes audio, resumes playback, and unlocks device")
     func stopRecordingUnmutesAndUnlocks() throws {
         let recorder = MockAudioRecorder()
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test.wav")
@@ -63,18 +85,21 @@ struct TranscriptionCoordinatorTests {
 
         let control = MockAudioControl()
         let guard_ = MockDeviceGuard()
-        let (coordinator, _, _, _, _, _) = makeCoordinator(
+        let playback = MockPlaybackController()
+        let (coordinator, _, _, _, _, _, _) = makeCoordinator(
             audioRecorder: recorder,
             audioControl: control,
-            deviceGuard: guard_
+            deviceGuard: guard_,
+            playbackController: playback
         )
 
         _ = try coordinator.stopRecording()
         #expect(control.unmuteCount == 1)
         #expect(guard_.unlockCalled)
+        #expect(playback.resumeCount == 1)
     }
 
-    @Test("cancelRecording cleans up resources")
+    @Test("cancelRecording cleans up resources and resumes playback")
     func cancelRecordingCleansUp() throws {
         let recorder = MockAudioRecorder()
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("cancel_test.wav")
@@ -84,16 +109,19 @@ struct TranscriptionCoordinatorTests {
 
         let control = MockAudioControl()
         let guard_ = MockDeviceGuard()
-        let (coordinator, _, _, _, _, _) = makeCoordinator(
+        let playback = MockPlaybackController()
+        let (coordinator, _, _, _, _, _, _) = makeCoordinator(
             audioRecorder: recorder,
             audioControl: control,
-            deviceGuard: guard_
+            deviceGuard: guard_,
+            playbackController: playback
         )
 
         coordinator.cancelRecording()
         #expect(recorder.stopCalled)
         #expect(control.unmuteCount == 1)
         #expect(guard_.unlockCalled)
+        #expect(playback.resumeCount == 1)
     }
 
     @Test("playStartSoundAndMute respects settings")
@@ -111,7 +139,8 @@ struct TranscriptionCoordinatorTests {
             audioControl: control,
             modelManager: MockModelManager(),
             deviceGuard: MockDeviceGuard(),
-            soundEffect: sound
+            soundEffect: sound,
+            playbackController: MockPlaybackController()
         )
 
         await coordinator.playStartSoundAndMute()
@@ -134,7 +163,8 @@ struct TranscriptionCoordinatorTests {
             audioControl: control,
             modelManager: MockModelManager(),
             deviceGuard: MockDeviceGuard(),
-            soundEffect: sound
+            soundEffect: sound,
+            playbackController: MockPlaybackController()
         )
 
         await coordinator.playStartSoundAndMute()

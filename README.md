@@ -25,8 +25,8 @@
 
 | Build | Architecture | Default Engine |
 |-------|-------------|----------------|
-| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.2-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
-| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.2-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
+| [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.3-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
+| [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.3-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
 
 ### Installation
 

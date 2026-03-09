@@ -3,8 +3,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Speaky"
-LOCAL_APP="$PROJECT_DIR/$APP_NAME.app"
-RELEASE_DIR="$PROJECT_DIR/release"
+BUILD_DIR="$PROJECT_DIR/build"
 VERSION=$(grep 'MARKETING_VERSION' "$PROJECT_DIR/project.yml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
 DMGBUILD_SETTINGS="$PROJECT_DIR/.github/dmgbuild-settings.py"
 DMG_BACKGROUND="$PROJECT_DIR/.github/dmg-background.png"
@@ -20,6 +19,12 @@ BUILD_MODE="${1:-universal}" # universal, silicon, intel, separate
 clean_derived_data() {
     rm -rf ~/Library/Developer/Xcode/DerivedData/"$APP_NAME"-*
 }
+
+# Clean DerivedData to avoid stale cached builds
+clean_derived_data
+
+# Ensure clean build output directory
+mkdir -p "$BUILD_DIR"
 
 # Helper: find the built .app in DerivedData
 find_built_app() {
@@ -55,46 +60,62 @@ create_dmg() {
     fi
 }
 
+# Helper: sign and package a single build into a DMG
+package_build() {
+    local suffix="$1"  # e.g. "Apple-Silicon", "Intel", "Universal", or ""
+    local dmg_name
+
+    BUILT_APP=$(find_built_app)
+    if [ -z "$BUILT_APP" ]; then
+        echo "ERROR: Build product not found!"
+        exit 1
+    fi
+
+    echo "    Arch: $(lipo -info "$BUILT_APP/Contents/MacOS/$APP_NAME" 2>&1)"
+
+    # Stage, sign, and create DMG
+    local stage_dir
+    stage_dir=$(mktemp -d)
+    ditto "$BUILT_APP" "$stage_dir/$APP_NAME.app"
+    prepare_app "$stage_dir/$APP_NAME.app"
+
+    if [ -n "$suffix" ]; then
+        dmg_name="$APP_NAME-$VERSION-$suffix.dmg"
+    else
+        dmg_name="$APP_NAME-$VERSION.dmg"
+    fi
+
+    echo "==> Creating DMG: $dmg_name..."
+    rm -f "$BUILD_DIR/$dmg_name"
+    create_dmg "$stage_dir/$APP_NAME.app" "$BUILD_DIR/$dmg_name"
+    rm -rf "$stage_dir"
+
+    echo "    $BUILD_DIR/$dmg_name"
+}
+
 case "$BUILD_MODE" in
   silicon)
     echo "==> Building $APP_NAME (Release, Apple Silicon only)..."
     xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
         ARCHS="arm64" ONLY_ACTIVE_ARCH=NO \
         build 2>&1 | tail -5
+    package_build "Apple-Silicon"
     ;;
   intel)
     echo "==> Building $APP_NAME (Release, Intel only)..."
     xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
         ARCHS="x86_64" ONLY_ACTIVE_ARCH=NO \
         build 2>&1 | tail -5
+    package_build "Intel"
     ;;
   separate)
-    mkdir -p "$RELEASE_DIR"
-
     # --- Apple Silicon ---
     echo "==> Building $APP_NAME (Release, Apple Silicon)..."
     clean_derived_data
     xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
         ARCHS="arm64" ONLY_ACTIVE_ARCH=NO \
         build 2>&1 | tail -5
-
-    BUILT_APP=$(find_built_app)
-    if [ -z "$BUILT_APP" ]; then
-        echo "ERROR: Apple Silicon build product not found!"
-        exit 1
-    fi
-
-    echo "    Arch: $(lipo -info "$BUILT_APP/Contents/MacOS/$APP_NAME" 2>&1)"
-
-    # Stage for DMG (as "Speaky.app", not "Speaky-Apple-Silicon.app")
-    STAGE_DIR=$(mktemp -d)
-    ditto "$BUILT_APP" "$STAGE_DIR/$APP_NAME.app"
-    prepare_app "$STAGE_DIR/$APP_NAME.app"
-
-    echo "==> Creating Apple Silicon DMG..."
-    rm -f "$RELEASE_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
-    create_dmg "$STAGE_DIR/$APP_NAME.app" "$RELEASE_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
-    rm -rf "$STAGE_DIR"
+    package_build "Apple-Silicon"
 
     # --- Intel ---
     echo "==> Building $APP_NAME (Release, Intel)..."
@@ -102,54 +123,19 @@ case "$BUILD_MODE" in
     xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
         ARCHS="x86_64" ONLY_ACTIVE_ARCH=NO \
         build 2>&1 | tail -5
-
-    BUILT_APP=$(find_built_app)
-    if [ -z "$BUILT_APP" ]; then
-        echo "ERROR: Intel build product not found!"
-        exit 1
-    fi
-
-    echo "    Arch: $(lipo -info "$BUILT_APP/Contents/MacOS/$APP_NAME" 2>&1)"
-
-    STAGE_DIR=$(mktemp -d)
-    ditto "$BUILT_APP" "$STAGE_DIR/$APP_NAME.app"
-    prepare_app "$STAGE_DIR/$APP_NAME.app"
-
-    echo "==> Creating Intel DMG..."
-    rm -f "$RELEASE_DIR/$APP_NAME-$VERSION-Intel.dmg"
-    create_dmg "$STAGE_DIR/$APP_NAME.app" "$RELEASE_DIR/$APP_NAME-$VERSION-Intel.dmg"
-    rm -rf "$STAGE_DIR"
-
-    echo ""
-    echo "==> Separate builds complete!"
-    echo "    DMG (Silicon): $RELEASE_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
-    echo "    DMG (Intel):   $RELEASE_DIR/$APP_NAME-$VERSION-Intel.dmg"
-    echo ""
-    ls -lh "$RELEASE_DIR/$APP_NAME-$VERSION"-*.dmg 2>/dev/null | awk '{print "    " $5 "\t" $NF}'
-    exit 0
+    package_build "Intel"
     ;;
   universal|*)
     echo "==> Building $APP_NAME (Release, Universal Binary)..."
     xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
         ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
         build 2>&1 | tail -5
+    package_build ""
     ;;
 esac
 
-# Find the built .app in DerivedData
-BUILT_APP=$(find_built_app)
-
-if [ -z "$BUILT_APP" ]; then
-    echo "ERROR: Build product not found!"
-    exit 1
-fi
-
-echo "==> Removing old $APP_NAME.app..."
-rm -rf "$LOCAL_APP"
-
-echo "==> Copying new build to project root..."
-cp -R "$BUILT_APP" "$LOCAL_APP"
-
-echo "==> Done! $LOCAL_APP"
-echo "==> Opening $APP_NAME..."
-open "$LOCAL_APP"
+echo ""
+echo "==> Build complete!"
+ls -lh "$BUILD_DIR/$APP_NAME-$VERSION"*.dmg 2>/dev/null | awk '{print "    " $5 "\t" $NF}'
+echo ""
+echo "Install from the DMG in build/ directory."

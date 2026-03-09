@@ -127,7 +127,7 @@ struct NotchWaveformView: View {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(barGradient(for: level))
                     .frame(width: barWidth, height: max(minBarHeight, level * maxBarHeight))
-                    .animation(.easeOut(duration: 0.06), value: level)
+                    .animation(.easeInOut(duration: 0.2), value: level)
             }
         }
     }

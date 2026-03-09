@@ -4,6 +4,7 @@ import SwiftUI
 struct MainWindowView: View {
     @Environment(AppState.self) private var appState
     @State private var showSettings = false
+    @State private var showHistory = false
     @State private var copied = false
 
     var body: some View {
@@ -24,6 +25,16 @@ struct MainWindowView: View {
                         .buttonStyle(.handCursor)
                         .help("Settings")
 
+                        Button {
+                            showHistory = true
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .buttonStyle(.handCursor)
+                        .help("History")
+
                         Spacer()
 
                         Text("Speaky")
@@ -32,6 +43,10 @@ struct MainWindowView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
+
+                    UpdateBannerView()
+                        .padding(.top, 8)
+                        .animation(.easeInOut(duration: 0.3), value: appState.updateService.hasUpdate)
 
                     Spacer()
 
@@ -58,6 +73,9 @@ struct MainWindowView: View {
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .navigationDestination(isPresented: $showHistory) {
+                HistoryView()
             }
         }
     }

@@ -10,14 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
         }
 
-        // Only prompt for accessibility on very first launch (before onboarding is done)
-        // After that, the user can manage it from Settings — no more intrusive dialogs
-        let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !hasOnboarded && !AXIsProcessTrusted() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                PasteService.requestAccessibility()
-            }
-        }
+        // Accessibility and microphone prompts are user-triggered only —
+        // via onboarding "Grant" buttons or the Settings Permissions section.
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -6,6 +6,10 @@ struct SpeakyApp: App {
     @State private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    init() {
+        Self.resetOnboardingIfFreshInstall()
+    }
+
     var body: some Scene {
         Window("Speaky", id: "main") {
             ContentRootView()
@@ -23,6 +27,19 @@ struct SpeakyApp: App {
                 .environment(appState)
         } label: {
             Image(systemName: appState.menuBarIconName)
+        }
+    }
+
+    /// If the sentinel file doesn't exist, this is a fresh install — reset onboarding.
+    private static func resetOnboardingIfFreshInstall() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let speakyDir = appSupport.appendingPathComponent("Speaky")
+        let sentinelFile = speakyDir.appendingPathComponent(".installed")
+
+        if !FileManager.default.fileExists(atPath: sentinelFile.path) {
+            UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
+            try? FileManager.default.createDirectory(at: speakyDir, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: sentinelFile.path, contents: nil)
         }
     }
 }
@@ -51,6 +68,10 @@ struct ContentRootView: View {
             // Pre-warm the selected engine to avoid cold start delay
             if hasCompletedOnboarding {
                 appState.warmUpEngine()
+            }
+            // Start auto-update checks
+            if appState.settings.checkForUpdates {
+                appState.updateService.startPeriodicChecks()
             }
         }
     }

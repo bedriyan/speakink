@@ -105,6 +105,26 @@ final class AudioControlService: @unchecked Sendable {
         let name: String
     }
 
+    /// Find the built-in microphone by checking device transport type.
+    /// Returns nil if no built-in input device is found (e.g. Mac Pro with no built-in mic).
+    static func builtInInputDevice() -> AudioDeviceInfo? {
+        for device in inputDevices() {
+            var transportType: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            var address = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyTransportType,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectGetPropertyData(device.id, &address, 0, nil, &size, &transportType) == noErr {
+                if transportType == kAudioDeviceTransportTypeBuiltIn {
+                    return device
+                }
+            }
+        }
+        return nil
+    }
+
     static func inputDevices() -> [AudioDeviceInfo] {
         var size: UInt32 = 0
         var address = AudioObjectPropertyAddress(
