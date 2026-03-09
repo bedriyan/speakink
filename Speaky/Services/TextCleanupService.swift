@@ -1,26 +1,27 @@
 import Foundation
 
 enum TextCleanupService {
-    private static let fillerPatterns: [String] = [
-        "\\bum\\b", "\\buh\\b", "\\blike\\b,?\\s*",
-        "\\byou know\\b,?\\s*", "\\bbasically\\b,?\\s*",
-        "\\bactually\\b,?\\s*", "\\bsort of\\b,?\\s*",
-        "\\bkind of\\b,?\\s*", "\\bi mean\\b,?\\s*",
-    ]
+    private static let fillerRegexes: [NSRegularExpression] = {
+        let patterns = [
+            "\\bum\\b", "\\buh\\b", "\\blike\\b,?\\s*",
+            "\\byou know\\b,?\\s*", "\\bbasically\\b,?\\s*",
+            "\\bactually\\b,?\\s*", "\\bsort of\\b,?\\s*",
+            "\\bkind of\\b,?\\s*", "\\bi mean\\b,?\\s*",
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: .caseInsensitive) }
+    }()
 
     /// Apply all cleanup steps to transcribed text.
     static func clean(_ text: String) -> String {
         var result = text
 
         // Remove filler words (case-insensitive)
-        for pattern in fillerPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result,
-                    range: NSRange(result.startIndex..., in: result),
-                    withTemplate: ""
-                )
-            }
+        for regex in fillerRegexes {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: ""
+            )
         }
 
         // Fix double/triple spaces

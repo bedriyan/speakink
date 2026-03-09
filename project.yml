@@ -71,3 +71,17 @@ targets:
       path: Speaky/Resources/Speaky.entitlements
       properties:
         com.apple.security.device.audio-input: true
+
+  SpeakyTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - SpeakyTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bedriyan.speaky.tests
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        GENERATE_INFOPLIST_FILE: true
+    dependencies:
+      - target: Speaky

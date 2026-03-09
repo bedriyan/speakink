@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "PlaybackController")
+private let logger = Logger.speaky(category: "PlaybackController")
 
 /// Controls media playback (pause/resume) during recording sessions.
 /// Uses the private MediaRemote framework for precise pause/play commands.

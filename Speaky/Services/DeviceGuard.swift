@@ -2,7 +2,7 @@ import Foundation
 import CoreAudio
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "DeviceGuard")
+private let logger = Logger.speaky(category: "DeviceGuard")
 
 /// Monitors a locked audio input device via CoreAudio HAL listeners.
 /// When the locked device is physically disconnected (USB/Bluetooth removal),

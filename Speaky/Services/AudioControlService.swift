@@ -3,7 +3,7 @@ import CoreAudio
 import AudioToolbox
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "AudioControlService")
+private let logger = Logger.speaky(category: "AudioControlService")
 
 final class AudioControlService: @unchecked Sendable {
     private var previousVolume: Float32?

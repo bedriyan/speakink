@@ -2,7 +2,7 @@ import Foundation
 import FluidAudio
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "ParakeetEngine")
+private let logger = Logger.speaky(category: "ParakeetEngine")
 
 /// Thread-safe transcription engine using an actor to serialize concurrent calls.
 /// `AsrManager` and `VadManager` are non-Sendable third-party types, so they are

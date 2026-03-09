@@ -39,6 +39,11 @@ enum Constants {
 
     static let keychainService = "speaky"
 
+    enum Groq {
+        static let apiURL = URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!
+        static let modelName = "whisper-large-v3-turbo"
+    }
+
     static let supportedLanguages: [(code: String, name: String)] = [
         ("auto", "Auto-detect"),
         ("en", "English"),

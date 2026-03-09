@@ -5,7 +5,7 @@ import os
 final class SoundEffectService {
     private var startPlayer: AVAudioPlayer?
     private var endPlayer: AVAudioPlayer?
-    private static let logger = Logger(subsystem: "com.bedriyan.speaky", category: "SoundEffect")
+    private static let logger = Logger.speaky(category: "SoundEffect")
 
     /// Play start sound and wait for it to finish before returning.
     func playStartAndWait() async {

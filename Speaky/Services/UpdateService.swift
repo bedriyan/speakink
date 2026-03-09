@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "UpdateService")
+private let logger = Logger.speaky(category: "UpdateService")
 
 struct GitHubRelease: Decodable, Sendable {
     let tagName: String

@@ -2,7 +2,7 @@ import Foundation
 import FluidAudio
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "ModelManager")
+private let logger = Logger.speaky(category: "ModelManager")
 
 @Observable
 final class ModelManager: @unchecked Sendable {

@@ -23,7 +23,7 @@ enum CleanupInterval: String, CaseIterable {
 }
 
 enum CleanupService {
-    private static let logger = Logger(subsystem: "com.bedriyan.speaky", category: "CleanupService")
+    private static let logger = Logger.speaky(category: "CleanupService")
 
     @MainActor
     static func performCleanup(context: ModelContext, interval: CleanupInterval) {

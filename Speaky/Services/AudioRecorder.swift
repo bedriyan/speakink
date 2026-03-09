@@ -4,7 +4,7 @@ import AudioToolbox
 import AVFoundation
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "AudioRecorder")
+private let logger = Logger.speaky(category: "AudioRecorder")
 
 /// Records audio using CoreAudio HAL AudioUnit directly (not AVAudioEngine).
 /// This gives us reliable device selection that isn't hijacked by Bluetooth

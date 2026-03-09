@@ -11,7 +11,7 @@ extension KeyboardShortcuts.Name {
 @Observable
 @MainActor
 final class HotkeyManager: @unchecked Sendable {
-    private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "HotkeyManager")
+    private let logger = Logger.speaky(category: "HotkeyManager")
 
     enum HotkeyOption: String, CaseIterable, Identifiable {
         case rightOption = "rightOption"
@@ -60,14 +60,14 @@ final class HotkeyManager: @unchecked Sendable {
     var onToggleRecording: (() -> Void)?
     var onEscapePressed: (() -> Void)?
 
-    // NSEvent monitors
-    private var globalEventMonitor: Any?
-    private var localEventMonitor: Any?
-    private var localEscapeMonitor: Any?
+    // NSEvent monitors — nonisolated(unsafe) so deinit can clean them up
+    private nonisolated(unsafe) var globalEventMonitor: Any?
+    private nonisolated(unsafe) var localEventMonitor: Any?
+    private nonisolated(unsafe) var localEscapeMonitor: Any?
 
     // CGEvent tap for global ESC (more reliable than NSEvent global monitor)
-    private var escapeTapPort: CFMachPort?
-    private var escapeTapSource: CFRunLoopSource?
+    private nonisolated(unsafe) var escapeTapPort: CFMachPort?
+    private nonisolated(unsafe) var escapeTapSource: CFRunLoopSource?
 
     // Push-to-talk / hands-free state
     private var currentKeyState = false
@@ -82,8 +82,8 @@ final class HotkeyManager: @unchecked Sendable {
     private var lastShortcutTriggerTime: Date?
     private let shortcutCooldownInterval: TimeInterval = 0.3
 
-    // Fn key debounce
-    private var fnDebounceTask: Task<Void, Never>?
+    // Fn key debounce — nonisolated(unsafe) so deinit can cancel it
+    private nonisolated(unsafe) var fnDebounceTask: Task<Void, Never>?
     private var pendingFnKeyState: Bool?
     private var pendingFnEventTime: TimeInterval?
 
@@ -372,5 +372,20 @@ final class HotkeyManager: @unchecked Sendable {
             return KeyboardShortcuts.getShortcut(for: .toggleRecording) != nil
         }
         return true
+    }
+
+    deinit {
+        // Release system resources that would otherwise leak.
+        if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = localEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = localEscapeMonitor { NSEvent.removeMonitor(monitor) }
+        if let source = escapeTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        if let port = escapeTapPort {
+            CGEvent.tapEnable(tap: port, enable: false)
+        }
+        fnDebounceTask?.cancel()
+        KeyboardShortcuts.removeAllHandlers()
     }
 }

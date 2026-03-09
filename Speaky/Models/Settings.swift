@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let settingsLogger = Logger(subsystem: "com.bedriyan.speaky", category: "Settings")
+private let settingsLogger = Logger.speaky(category: "Settings")
 
 @Observable
 final class AppSettings {

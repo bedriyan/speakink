@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "GroqEngine")
+private let logger = Logger.speaky(category: "GroqEngine")
 
 actor GroqEngine: TranscriptionEngine {
     private let apiKey: String
@@ -14,7 +14,7 @@ actor GroqEngine: TranscriptionEngine {
         let audioData = try Data(contentsOf: audioFileURL)
         let boundary = UUID().uuidString
 
-        var request = URLRequest(url: URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!)
+        var request = URLRequest(url: Constants.Groq.apiURL)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -31,7 +31,7 @@ actor GroqEngine: TranscriptionEngine {
         // Model field
         body.append("--\(boundary)\r\n")
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-        body.append("whisper-large-v3-turbo")
+        body.append(Constants.Groq.modelName)
         body.append("\r\n")
 
         // Language field

@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
-private let logger = Logger(subsystem: "com.bedriyan.speaky", category: "PasteService")
+private let logger = Logger.speaky(category: "PasteService")
 
 final class PasteService: @unchecked Sendable {
 
