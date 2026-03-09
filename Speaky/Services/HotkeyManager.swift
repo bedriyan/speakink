@@ -60,14 +60,14 @@ final class HotkeyManager: @unchecked Sendable {
     var onToggleRecording: (() -> Void)?
     var onEscapePressed: (() -> Void)?
 
-    // NSEvent monitors
-    private var globalEventMonitor: Any?
-    private var localEventMonitor: Any?
-    private var localEscapeMonitor: Any?
+    // NSEvent monitors — nonisolated(unsafe) so deinit can clean them up
+    private nonisolated(unsafe) var globalEventMonitor: Any?
+    private nonisolated(unsafe) var localEventMonitor: Any?
+    private nonisolated(unsafe) var localEscapeMonitor: Any?
 
     // CGEvent tap for global ESC (more reliable than NSEvent global monitor)
-    private var escapeTapPort: CFMachPort?
-    private var escapeTapSource: CFRunLoopSource?
+    private nonisolated(unsafe) var escapeTapPort: CFMachPort?
+    private nonisolated(unsafe) var escapeTapSource: CFRunLoopSource?
 
     // Push-to-talk / hands-free state
     private var currentKeyState = false
@@ -82,8 +82,8 @@ final class HotkeyManager: @unchecked Sendable {
     private var lastShortcutTriggerTime: Date?
     private let shortcutCooldownInterval: TimeInterval = 0.3
 
-    // Fn key debounce
-    private var fnDebounceTask: Task<Void, Never>?
+    // Fn key debounce — nonisolated(unsafe) so deinit can cancel it
+    private nonisolated(unsafe) var fnDebounceTask: Task<Void, Never>?
     private var pendingFnKeyState: Bool?
     private var pendingFnEventTime: TimeInterval?
 
@@ -376,7 +376,6 @@ final class HotkeyManager: @unchecked Sendable {
 
     deinit {
         // Release system resources that would otherwise leak.
-        // These Core Foundation and NSEvent calls are safe from any thread at teardown.
         if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localEventMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localEscapeMonitor { NSEvent.removeMonitor(monitor) }

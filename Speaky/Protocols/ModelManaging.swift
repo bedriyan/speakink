@@ -1,7 +1,7 @@
 import Foundation
 
 /// Abstraction over model download and lifecycle management for testability.
-protocol ModelManaging: AnyObject {
+protocol ModelManaging: AnyObject, Sendable {
     var downloadProgress: [String: Double] { get set }
     var downloadedModels: Set<String> { get set }
 

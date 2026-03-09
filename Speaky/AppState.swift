@@ -29,10 +29,7 @@ final class AppState {
     let hotkeyManager = HotkeyManager()
     let modelManager = ModelManager()
     let updateService = UpdateService()
-    private(set) lazy var coordinator: TranscriptionCoordinator = TranscriptionCoordinator(
-        settings: settings,
-        modelManager: modelManager
-    )
+    private(set) var coordinator: TranscriptionCoordinator!
 
     // SwiftData container for saving transcriptions
     var modelContext: ModelContext?
@@ -41,6 +38,10 @@ final class AppState {
     private var transcriptionTask: Task<Void, Never>?
 
     init() {
+        coordinator = TranscriptionCoordinator(
+            settings: settings,
+            modelManager: modelManager
+        )
         hotkeyManager.onToggleRecording = { [weak self] in
             self?.toggleRecording()
         }
