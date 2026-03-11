@@ -14,7 +14,7 @@ final class AudioRecorder: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private var outputURL: URL?
     private var levelMonitor: AudioLevelMonitor?
-    private let lock = NSLock()
+    private var lock = os_unfair_lock()
     private let writeQueue = DispatchQueue(label: "com.bedriyan.speaky.audioWrite", qos: .userInitiated)
 
     // Device and format state
@@ -35,6 +35,11 @@ final class AudioRecorder: @unchecked Sendable {
     private static let channels: AVAudioChannelCount = 1
     private static let maxFrames: UInt32 = 4096
 
+    deinit {
+        cleanupUnit()
+        freeBuffers()
+    }
+
     func start(deviceID: UInt32?, levelMonitor: AudioLevelMonitor?) throws {
         // Cleanup any previous session
         if audioUnit != nil {
@@ -43,9 +48,9 @@ final class AudioRecorder: @unchecked Sendable {
             freeBuffers()
         }
 
-        lock.lock()
+        os_unfair_lock_lock(&lock)
         self.levelMonitor = levelMonitor
-        lock.unlock()
+        os_unfair_lock_unlock(&lock)
 
         // 1. Create HAL Output AudioUnit (direct hardware access)
         try createAudioUnit()
@@ -86,6 +91,10 @@ final class AudioRecorder: @unchecked Sendable {
         audioFile = try AVAudioFile(forWriting: url, settings: fmt.settings)
 
         // Pre-allocate write buffer with max capacity
+        guard deviceFormat.mSampleRate > 0 else {
+            logger.error("Device reported 0 Hz sample rate")
+            throw AudioRecorderError.failedToSetFormat(0)
+        }
         let maxOutputFrames = UInt32(Double(Self.maxFrames) * (Self.sampleRate / deviceFormat.mSampleRate)) + 1
         writeBuffer = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: maxOutputFrames)
 
@@ -123,10 +132,10 @@ final class AudioRecorder: @unchecked Sendable {
         // Wait for any pending writes to flush
         writeQueue.sync {}
 
-        lock.lock()
+        os_unfair_lock_lock(&lock)
         audioFile = nil
         levelMonitor = nil
-        lock.unlock()
+        os_unfair_lock_unlock(&lock)
 
         freeBuffers()
 
@@ -376,13 +385,12 @@ final class AudioRecorder: @unchecked Sendable {
             }
         }
 
-        // Feed level monitor (lightweight RMS, safe in callback)
-        lock.lock()
+        // Feed level monitor (lightweight RMS, safe in callback — no heap allocation)
+        os_unfair_lock_lock(&lock)
         let monitor = levelMonitor
-        lock.unlock()
+        os_unfair_lock_unlock(&lock)
         if let monitor {
-            let samples = Array(UnsafeBufferPointer(start: outputBuf, count: Int(outputFrameCount)))
-            monitor.process(samples: samples)
+            monitor.process(buffer: outputBuf, count: Int(outputFrameCount))
         }
 
         // Copy converted data and dispatch file write off the audio thread
@@ -400,9 +408,9 @@ final class AudioRecorder: @unchecked Sendable {
     // MARK: - File Writing (runs on serial writeQueue, off audio thread)
 
     private func writeToFile(data: Data, frameCount: UInt32) {
-        lock.lock()
+        os_unfair_lock_lock(&lock)
         let file = audioFile
-        lock.unlock()
+        os_unfair_lock_unlock(&lock)
         guard let file else { return }
 
         guard let fmt = targetFormat,

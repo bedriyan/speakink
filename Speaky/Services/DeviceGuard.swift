@@ -8,8 +8,9 @@ private let logger = Logger.speaky(category: "DeviceGuard")
 /// When the locked device is physically disconnected (USB/Bluetooth removal),
 /// fires `onDeviceLost` so the recording can be gracefully stopped.
 final class DeviceGuard: @unchecked Sendable {
-    private var lockedDeviceID: AudioDeviceID?
+    private var _lockedDeviceID: AudioDeviceID?
     private var isListening = false
+    private var stateLock = os_unfair_lock()
     var onDeviceLost: (() -> Void)?
 
     // Stored as a property so it can be removed later
@@ -18,7 +19,9 @@ final class DeviceGuard: @unchecked Sendable {
     /// Lock monitoring to a specific audio input device.
     func lock(to deviceID: AudioDeviceID) {
         unlock() // Clean up any previous listener
-        lockedDeviceID = deviceID
+        os_unfair_lock_lock(&stateLock)
+        _lockedDeviceID = deviceID
+        os_unfair_lock_unlock(&stateLock)
         startListening()
         logger.info("DeviceGuard locked to device \(deviceID)")
     }
@@ -26,7 +29,17 @@ final class DeviceGuard: @unchecked Sendable {
     /// Stop monitoring. Safe to call multiple times.
     func unlock() {
         stopListening()
-        lockedDeviceID = nil
+        os_unfair_lock_lock(&stateLock)
+        _lockedDeviceID = nil
+        os_unfair_lock_unlock(&stateLock)
+    }
+
+    /// Thread-safe read of the locked device ID.
+    private var lockedDeviceID: AudioDeviceID? {
+        os_unfair_lock_lock(&stateLock)
+        let id = _lockedDeviceID
+        os_unfair_lock_unlock(&stateLock)
+        return id
     }
 
     /// Check if the locked device is still present in the system's device list.
@@ -51,7 +64,8 @@ final class DeviceGuard: @unchecked Sendable {
             guard let self else { return }
             // Check if our locked device is still available
             if !self.isLockedDeviceAvailable() {
-                logger.warning("Locked audio device \(self.lockedDeviceID ?? 0) disconnected")
+                let deviceID = self.lockedDeviceID ?? 0
+                logger.warning("Locked audio device \(deviceID) disconnected")
                 DispatchQueue.main.async {
                     self.onDeviceLost?()
                 }

@@ -170,7 +170,7 @@ final class AppSettings {
         if savedTimeout == 300 || savedTimeout == nil {
             self.autoUnloadTimeout = 0
         } else {
-            self.autoUnloadTimeout = savedTimeout!
+            self.autoUnloadTimeout = savedTimeout ?? 0
         }
         self.soundEffectsEnabled = UserDefaults.standard.object(forKey: "soundEffectsEnabled") as? Bool ?? true
         self.checkForUpdates = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true

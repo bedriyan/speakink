@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var groqKeySaved: Bool = false
     @State private var isEditingGroqKey: Bool = false
     @State private var showAdvanced = false
+    @State private var downloadError: String?
 
     var body: some View {
         @Bindable var settings = appState.settings
@@ -40,26 +41,11 @@ struct SettingsView: View {
 
             // Behavior
             Section("Behavior") {
-                Toggle("Auto-paste after transcription", isOn: Binding(
-                    get: { settings.autoPaste },
-                    set: { settings.autoPaste = $0 }
-                ))
-                .contentShape(Rectangle())
-                .onTapGesture { settings.autoPaste.toggle() }
+                Toggle("Auto-paste after transcription", isOn: $settings.autoPaste)
 
-                Toggle("Clean up filler words", isOn: Binding(
-                    get: { settings.cleanUpTranscriptions },
-                    set: { settings.cleanUpTranscriptions = $0 }
-                ))
-                .contentShape(Rectangle())
-                .onTapGesture { settings.cleanUpTranscriptions.toggle() }
+                Toggle("Clean up filler words", isOn: $settings.cleanUpTranscriptions)
 
-                Toggle("Enable sound effects", isOn: Binding(
-                    get: { settings.soundEffectsEnabled },
-                    set: { settings.soundEffectsEnabled = $0 }
-                ))
-                .contentShape(Rectangle())
-                .onTapGesture { settings.soundEffectsEnabled.toggle() }
+                Toggle("Enable sound effects", isOn: $settings.soundEffectsEnabled)
 
                 Toggle("Check for updates automatically", isOn: Binding(
                     get: { settings.checkForUpdates },
@@ -68,12 +54,6 @@ struct SettingsView: View {
                         appState.updaterManager.setAutomaticChecks(newValue)
                     }
                 ))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    let newValue = !settings.checkForUpdates
-                    settings.checkForUpdates = newValue
-                    appState.updaterManager.setAutomaticChecks(newValue)
-                }
 
                 Button("Check for Updates Now") {
                     appState.updaterManager.checkForUpdates()
@@ -229,6 +209,13 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.handCursor)
                     .padding(.top, 4)
+
+                    if let downloadError {
+                        Text(downloadError)
+                            .font(.caption)
+                            .foregroundStyle(Theme.recording)
+                            .padding(.top, 2)
+                    }
 
                     Divider()
                         .padding(.vertical, 4)
@@ -508,6 +495,7 @@ struct SettingsView: View {
                         .foregroundStyle(.red.opacity(0.6))
                 }
                 .buttonStyle(.handCursor)
+                .accessibilityLabel("Delete \(model.name)")
             }
         }
         .padding(.vertical, 4)
@@ -520,12 +508,17 @@ struct SettingsView: View {
     }
 
     private func downloadModel(_ model: TranscriptionModelInfo) {
+        downloadError = nil
         Task {
-            if model.type == .parakeet {
-                _ = try? await appState.modelManager.downloadParakeetModel(model)
-            } else {
-                guard let url = model.downloadURL, let fileName = model.fileName else { return }
-                _ = try? await appState.modelManager.downloadModel(id: model.id, from: url, fileName: fileName)
+            do {
+                if model.type == .parakeet {
+                    try await appState.modelManager.downloadParakeetModel(model)
+                } else {
+                    guard let url = model.downloadURL, let fileName = model.fileName else { return }
+                    try await appState.modelManager.downloadModel(id: model.id, from: url, fileName: fileName)
+                }
+            } catch {
+                downloadError = "Download failed: \(error.localizedDescription)"
             }
         }
     }
@@ -566,6 +559,8 @@ struct RatingDots: View {
                     .frame(width: 5, height: 5)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Rating: \(rating) of 5")
     }
 }
 
@@ -677,8 +672,3 @@ struct HotkeyRecorderRow: View {
     }
 }
 
-// MARK: - Notification for tab switching (kept for compatibility)
-
-extension Notification.Name {
-    static let switchToSettings = Notification.Name("switchToSettings")
-}

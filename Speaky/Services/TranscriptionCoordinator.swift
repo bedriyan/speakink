@@ -26,6 +26,12 @@ final class TranscriptionCoordinator {
 
     private let settings: AppSettings
 
+    nonisolated deinit {
+        // Wake observer and keep-alive task are cleaned up by the runtime
+        // since they use [weak self]. No manual cleanup needed in deinit
+        // because @MainActor properties cannot be accessed from nonisolated deinit.
+    }
+
     init(
         settings: AppSettings,
         audioRecorder: any AudioRecording = AudioRecorder(),
@@ -273,11 +279,13 @@ final class TranscriptionCoordinator {
     }
 
     func cancelRecording() {
+        backgroundLoadTask?.cancel()
+        backgroundLoadTask = nil
         do {
             let audioURL = try audioRecorder.stop()
             try? FileManager.default.removeItem(at: audioURL)
         } catch {
-            // Ignore — just cleaning up
+            logger.debug("cancelRecording cleanup: \(error.localizedDescription, privacy: .public)")
         }
         levelMonitor = nil
         if settings.backgroundAudioMode == .muteSystemAudio {
@@ -370,7 +378,9 @@ final class TranscriptionCoordinator {
                 try await Task.sleep(for: .seconds(Constants.Timing.transcriptionTimeout))
                 throw TranscriptionError.engineError("Transcription timed out after \(Int(Constants.Timing.transcriptionTimeout)) seconds")
             }
-            let result = try await group.next()!
+            guard let result = try await group.next() else {
+                throw TranscriptionError.engineError("Transcription produced no result")
+            }
             group.cancelAll()
             return result
         }

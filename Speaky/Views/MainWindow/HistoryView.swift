@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import os
+
+private let historyLogger = Logger.speaky(category: "HistoryView")
 
 struct HistoryView: View {
     @Environment(AppState.self) private var appState
@@ -8,6 +11,7 @@ struct HistoryView: View {
     @State private var playerState = AudioPlayerState()
     @State private var retranscribingID: UUID?
     @State private var copiedID: UUID?
+    @State private var errorMessage: String?
 
     var body: some View {
         Group {
@@ -18,6 +22,23 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("History")
+        .overlay(alignment: .bottom) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.recording.opacity(0.9)))
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                            withAnimation { self.errorMessage = nil }
+                        }
+                    }
+            }
+        }
+        .animation(.easeInOut, value: errorMessage)
         .onDisappear {
             playerState.stop()
         }
@@ -134,7 +155,7 @@ struct HistoryView: View {
                 }
 
                 // Retranscribe
-                if t.audioFileURL != nil, FileManager.default.fileExists(atPath: t.audioFileURL!) {
+                if let audioPath = t.audioFileURL, FileManager.default.fileExists(atPath: audioPath) {
                     Button {
                         retranscribe(t)
                     } label: {
@@ -220,26 +241,41 @@ struct HistoryView: View {
 
     private func retranscribe(_ t: Transcription) {
         retranscribingID = t.id
+        errorMessage = nil
         Task {
             defer { retranscribingID = nil }
-            try? await appState.retranscribe(t)
+            do {
+                try await appState.retranscribe(t)
+            } catch {
+                historyLogger.error("Retranscription failed: \(error.localizedDescription, privacy: .public)")
+                errorMessage = "Retranscription failed: \(error.localizedDescription)"
+            }
         }
     }
 
     // MARK: - Formatting
 
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f
+    }()
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
     private func formattedDate(_ date: Date) -> String {
         let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-
         if calendar.isDateInToday(date) {
-            return "Today \(formatter.string(from: date))"
+            return "Today \(Self.timeFormatter.string(from: date))"
         } else if calendar.isDateInYesterday(date) {
-            return "Yesterday \(formatter.string(from: date))"
+            return "Yesterday \(Self.timeFormatter.string(from: date))"
         } else {
-            formatter.dateStyle = .medium
-            return formatter.string(from: date)
+            return Self.dateTimeFormatter.string(from: date)
         }
     }
 
@@ -291,7 +327,7 @@ final class AudioPlayerState {
             progress = 0
             startTimer()
         } catch {
-            // File may be corrupted
+            historyLogger.error("Audio playback failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

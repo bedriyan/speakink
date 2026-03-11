@@ -3,7 +3,11 @@ import Foundation
 enum TextCleanupService {
     private static let fillerRegexes: [NSRegularExpression] = {
         let patterns = [
-            "\\bum\\b", "\\buh\\b", "\\blike\\b,?\\s*",
+            "\\bum\\b,?\\s*", "\\buh\\b,?\\s*",
+            // Only match "like" as a filler: preceded by comma/start or followed by comma
+            // Avoids stripping "I like pizza" while catching "I was, like, going"
+            "(?<=, )like,?\\s*",
+            ",\\s*like\\b,?\\s*",
             "\\byou know\\b,?\\s*", "\\bbasically\\b,?\\s*",
             "\\bactually\\b,?\\s*", "\\bsort of\\b,?\\s*",
             "\\bkind of\\b,?\\s*", "\\bi mean\\b,?\\s*",
@@ -24,10 +28,8 @@ enum TextCleanupService {
             )
         }
 
-        // Fix double/triple spaces
-        while result.contains("  ") {
-            result = result.replacingOccurrences(of: "  ", with: " ")
-        }
+        // Fix double/triple spaces (single-pass regex)
+        result = result.replacingOccurrences(of: " {2,}", with: " ", options: .regularExpression)
 
         // Auto-capitalize first letter of sentences
         result = capitalizeSentences(result)

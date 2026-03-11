@@ -28,9 +28,12 @@ final class MockAudioRecorder: AudioRecording, @unchecked Sendable {
 
 final class MockPasteService: Pasting, @unchecked Sendable {
     var pastedTexts: [String] = []
+    var pasteResult: PasteResult = .pasted
 
-    func paste(_ text: String) {
+    @discardableResult
+    func paste(_ text: String) -> PasteResult {
         pastedTexts.append(text)
+        return pasteResult
     }
 }
 

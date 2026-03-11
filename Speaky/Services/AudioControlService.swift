@@ -5,6 +5,8 @@ import os
 
 private let logger = Logger.speaky(category: "AudioControlService")
 
+/// Audio volume control service. Only called from @MainActor (TranscriptionCoordinator),
+/// so mute/unmute are always serialized. Marked @unchecked Sendable for protocol conformance.
 final class AudioControlService: @unchecked Sendable {
     private var previousVolume: Float32?
     private var wasMuted = false
