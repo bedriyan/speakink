@@ -24,6 +24,7 @@ struct MainWindowView: View {
                         }
                         .buttonStyle(.handCursor)
                         .help("Settings")
+                        .accessibilityLabel("Settings")
 
                         Button {
                             showHistory = true
@@ -34,6 +35,7 @@ struct MainWindowView: View {
                         }
                         .buttonStyle(.handCursor)
                         .help("History")
+                        .accessibilityLabel("History")
 
                         Spacer()
 
@@ -124,6 +126,7 @@ struct MainWindowView: View {
             .frame(width: 220, height: 220)
         }
         .buttonStyle(.handCursor)
+        .accessibilityLabel(appState.isRecording ? "Stop recording" : appState.isTranscribing ? "Cancel transcription" : "Start recording")
         .animation(.easeInOut(duration: 0.3), value: appState.state)
     }
 
@@ -207,6 +210,7 @@ struct MainWindowView: View {
                 }
                 .buttonStyle(.handCursor)
                 .help("Copy to clipboard")
+                .accessibilityLabel("Copy to clipboard")
             }
 
             Text(text)

@@ -5,13 +5,30 @@ import AppKit
 
 struct HandCursorButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        HandCursorBody(configuration: configuration)
+    }
+}
+
+/// Tracks hover state to safely pop cursor on disappear.
+private struct HandCursorBody: View {
+    let configuration: ButtonStyleConfiguration
+    @State private var isHovering = false
+
+    var body: some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .onHover { hovering in
+                isHovering = hovering
                 if hovering {
                     NSCursor.pointingHand.push()
                 } else {
                     NSCursor.pop()
+                }
+            }
+            .onDisappear {
+                if isHovering {
+                    NSCursor.pop()
+                    isHovering = false
                 }
             }
     }

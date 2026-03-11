@@ -5,7 +5,6 @@ struct NotchRecordingView: View {
     @State private var elapsedTime: TimeInterval = 0
     @State private var timer: Timer?
 
-
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Compact recording bar (always same size)
@@ -77,6 +76,7 @@ struct NotchRecordingView: View {
                             }
                         }
                         .buttonStyle(.handCursor)
+                        .accessibilityLabel("Stop recording")
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
@@ -86,9 +86,10 @@ struct NotchRecordingView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            let start = Date()
             timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                 Task { @MainActor in
-                    elapsedTime += 0.1
+                    elapsedTime = Date().timeIntervalSince(start)
                 }
             }
         }

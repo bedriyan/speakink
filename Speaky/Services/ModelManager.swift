@@ -51,10 +51,10 @@ final class ModelManager: @unchecked Sendable {
         await MainActor.run { self.downloadProgress[id] = 0 }
         logger.info("Starting download for model \(id) from \(url.absoluteString)")
 
-        let data = try await downloadFileWithProgress(from: url, progressKey: id)
-
-        try data.write(to: destination)
-        logger.info("Model \(id) saved to \(destination.path) (\(data.count) bytes)")
+        try await downloadFileToDisk(from: url, destination: destination, progressKey: id)
+        let attrs = try FileManager.default.attributesOfItem(atPath: destination.path)
+        let size = attrs[.size] as? UInt64 ?? 0
+        logger.info("Model \(id) saved to \(destination.path) (\(size) bytes)")
 
         await MainActor.run {
             self.downloadProgress[id] = 1.0
@@ -213,12 +213,12 @@ final class ModelManager: @unchecked Sendable {
 
     // MARK: - Private
 
-    private func downloadFileWithProgress(from url: URL, progressKey: String) async throws -> Data {
-        let tempDestination = modelsDirectory.appendingPathComponent(UUID().uuidString + ".tmp")
+    /// Download a file directly to disk — avoids loading the entire model into memory.
+    private func downloadFileToDisk(from url: URL, destination: URL, progressKey: String) async throws {
         let state = DownloadState()
         let weakSelf = WeakBox(self)
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let task = URLSession.shared.downloadTask(with: url) { tempURL, response, error in
                 if let error {
                     logger.error("Download error: \(error.localizedDescription)")
@@ -236,15 +236,14 @@ final class ModelManager: @unchecked Sendable {
                 }
 
                 do {
-                    if FileManager.default.fileExists(atPath: tempDestination.path) {
-                        try FileManager.default.removeItem(at: tempDestination)
+                    // Move downloaded file directly to destination — no memory copy
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.removeItem(at: destination)
                     }
-                    try FileManager.default.moveItem(at: tempURL, to: tempDestination)
-                    let data = try Data(contentsOf: tempDestination, options: .mappedIfSafe)
-                    state.finishOnce(continuation: continuation, result: .success(data))
-                    try? FileManager.default.removeItem(at: tempDestination)
+                    try FileManager.default.moveItem(at: tempURL, to: destination)
+                    state.finishOnce(continuation: continuation, result: .success(()))
                 } catch {
-                    logger.error("File error: \(error.localizedDescription)")
+                    logger.error("File move error: \(error.localizedDescription)")
                     state.finishOnce(continuation: continuation, result: .failure(error))
                 }
             }
@@ -303,7 +302,7 @@ private final class DownloadState: @unchecked Sendable {
     var lastProgress: Double = 0
     var observation: NSKeyValueObservation?
 
-    func finishOnce(continuation: CheckedContinuation<Data, Error>, result: Result<Data, Error>) {
+    func finishOnce(continuation: CheckedContinuation<Void, Error>, result: Result<Void, Error>) {
         lock.lock()
         defer { lock.unlock() }
         guard !hasResumed else { return }

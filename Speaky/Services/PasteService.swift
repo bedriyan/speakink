@@ -87,12 +87,15 @@ final class PasteService: @unchecked Sendable {
     private func restorePasteboard(_ pasteboard: NSPasteboard, items: [[NSPasteboard.PasteboardType: Data]]) {
         guard !items.isEmpty else { return }
         pasteboard.clearContents()
-        for itemDict in items {
+        let pasteboardItems = items.map { itemDict -> NSPasteboardItem in
             let item = NSPasteboardItem()
             for (type, data) in itemDict {
                 item.setData(data, forType: type)
             }
-            pasteboard.writeObjects([item])
+            return item
+        }
+        if !pasteboard.writeObjects(pasteboardItems) {
+            logger.warning("Failed to restore previous clipboard contents")
         }
     }
 

@@ -122,6 +122,12 @@ final class HotkeyManager: @unchecked Sendable {
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             // Re-enable tap if it gets disabled by the system
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                if let refcon {
+                    let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
+                    if let port = manager.escapeTapPort {
+                        CGEvent.tapEnable(tap: port, enable: true)
+                    }
+                }
                 return Unmanaged.passUnretained(event)
             }
 
