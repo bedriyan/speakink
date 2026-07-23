@@ -29,8 +29,32 @@ final class MockAudioRecorder: AudioRecording, @unchecked Sendable {
 final class MockPasteService: Pasting, @unchecked Sendable {
     var pastedTexts: [String] = []
 
-    func paste(_ text: String) {
+    @discardableResult
+    func paste(_ text: String) -> PasteResult {
         pastedTexts.append(text)
+        return .pasted
+    }
+}
+
+// MARK: - In-memory settings
+
+final class InMemorySettingsStore: SettingsStore {
+    private var values: [String: Any] = [:]
+
+    func object(forKey defaultName: String) -> Any? {
+        values[defaultName]
+    }
+
+    func string(forKey defaultName: String) -> String? {
+        values[defaultName] as? String
+    }
+
+    func set(_ value: Any?, forKey defaultName: String) {
+        values[defaultName] = value
+    }
+
+    func removeObject(forKey defaultName: String) {
+        values.removeValue(forKey: defaultName)
     }
 }
 

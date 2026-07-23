@@ -36,7 +36,7 @@ final class PasteService: @unchecked Sendable {
 
             // Restore previous clipboard after paste completes
             DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Timing.pasteboardRestoreDelay) { [weak self] in
-                self?.restorePasteboard(pasteboard, items: savedItems)
+                self?.restorePasteboard(.general, items: savedItems)
             }
         }
         return .pasted

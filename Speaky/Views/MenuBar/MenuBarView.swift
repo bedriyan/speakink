@@ -46,11 +46,6 @@ struct MenuBarView: View {
             }
             .keyboardShortcut(",")
 
-            Button("Check for Updates...") {
-                appState.updaterManager.checkForUpdates()
-                NSApp.activate(ignoringOtherApps: true)
-            }
-
             Divider()
 
             Button("Quit Speaky") {

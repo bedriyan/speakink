@@ -5,9 +5,15 @@ import SwiftData
 struct SpeakyApp: App {
     @State private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    private let modelContainer: ModelContainer
 
     init() {
         Self.resetOnboardingIfFreshInstall()
+        do {
+            modelContainer = try PersistenceContainer.make()
+        } catch {
+            fatalError("Unable to initialize transcription storage: \(error)")
+        }
     }
 
     var body: some Scene {
@@ -19,7 +25,7 @@ struct SpeakyApp: App {
                     appDelegate.appState = appState
                 }
         }
-        .modelContainer(for: Transcription.self)
+        .modelContainer(modelContainer)
         .defaultSize(width: 440, height: 520)
 
         MenuBarExtra {
@@ -32,13 +38,10 @@ struct SpeakyApp: App {
 
     /// If the sentinel file doesn't exist, this is a fresh install — reset onboarding.
     private static func resetOnboardingIfFreshInstall() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let speakyDir = appSupport.appendingPathComponent("Speaky")
-        let sentinelFile = speakyDir.appendingPathComponent(".installed")
+        let sentinelFile = Constants.appSupportPath.appendingPathComponent(".installed")
 
         if !FileManager.default.fileExists(atPath: sentinelFile.path) {
             UserDefaults.standard.set(false, forKey: "hasCompletedOnboarding")
-            try? FileManager.default.createDirectory(at: speakyDir, withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: sentinelFile.path, contents: nil)
         }
     }
@@ -71,8 +74,6 @@ struct ContentRootView: View {
                 // Check if permissions were revoked since last launch
                 appState.checkPermissionsOnLaunch()
             }
-            // Start Sparkle updater
-            appState.updaterManager.startIfEnabled(checkForUpdates: appState.settings.checkForUpdates)
         }
     }
 }

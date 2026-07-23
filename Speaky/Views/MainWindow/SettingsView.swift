@@ -60,25 +60,6 @@ struct SettingsView: View {
                 ))
                 .contentShape(Rectangle())
                 .onTapGesture { settings.soundEffectsEnabled.toggle() }
-
-                Toggle("Check for updates automatically", isOn: Binding(
-                    get: { settings.checkForUpdates },
-                    set: { newValue in
-                        settings.checkForUpdates = newValue
-                        appState.updaterManager.setAutomaticChecks(newValue)
-                    }
-                ))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    let newValue = !settings.checkForUpdates
-                    settings.checkForUpdates = newValue
-                    appState.updaterManager.setAutomaticChecks(newValue)
-                }
-
-                Button("Check for Updates Now") {
-                    appState.updaterManager.checkForUpdates()
-                }
-                .disabled(!appState.updaterManager.canCheckForUpdates)
             }
 
             // Audio Input

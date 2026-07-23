@@ -1,0 +1,265 @@
+name: Build self-signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing semantic-version tag to build (for example, v2.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-signed-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  SPEAKY_RELEASE_CONTRACT_VERSION: "1"
+  SPEAKY_XCODE_VERSION: "26.3"
+  SPEAKY_XCODE_BUILD: "17C529"
+  SPEAKY_XCODEGEN_VERSION: "2.46.0"
+  SPEAKY_XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+
+jobs:
+  test:
+    if: github.repository == 'bedriyan/speaky' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 45
+    outputs:
+      source_sha: ${{ steps.validate.outputs.source_sha }}
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release source and contract
+        id: validate
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "release_tag must use vMAJOR.MINOR.PATCH."
+            exit 1
+          }
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+
+          source_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          test "$source_sha" = "$(git rev-parse HEAD)"
+          test "$source_sha" = "$TRUSTED_MAIN_SHA"
+          echo "Validated release source: $RELEASE_TAG -> $source_sha"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+          project_version="$(awk '/MARKETING_VERSION:/ { gsub(/"/, "", $2); print $2; exit }' project.yml)"
+          test "$RELEASE_TAG" = "v$project_version"
+
+          test -f .github/release-contract-version
+          test "$(tr -d '[:space:]' < .github/release-contract-version)" = \
+            "$SPEAKY_RELEASE_CONTRACT_VERSION"
+          test -x build.sh
+          test -x scripts/verify-app-identity.sh
+          git ls-files --error-unmatch \
+            Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          grep -Fq 'SPEAKY_ALLOW_ADHOC' build.sh
+          grep -Fq 'cannot establish a stable identity' scripts/verify-app-identity.sh
+
+      - name: Verify pinned Xcode
+        run: |
+          set -euo pipefail
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
+          test "$(xcodebuild -version | sed -n '1p')" = \
+            "Xcode $SPEAKY_XCODE_VERSION"
+          test "$(xcodebuild -version | sed -n '2p')" = \
+            "Build version $SPEAKY_XCODE_BUILD"
+
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          curl --fail --silent --show-error --location \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$SPEAKY_XCODEGEN_VERSION/xcodegen.zip" \
+            --output "$archive"
+          echo "$SPEAKY_XCODEGEN_SHA256  $archive" | shasum -a 256 -c -
+          ditto -x -k "$archive" "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/xcodegen/bin/xcodegen" --version)" = \
+            "Version: $SPEAKY_XCODEGEN_VERSION"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate project and run tests
+        run: |
+          set -euo pipefail
+          package_lock=Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          package_lock_sha="$(shasum -a 256 "$package_lock" | awk '{ print $1 }')"
+          xcodegen generate
+          test -f "$package_lock"
+          test "$(shasum -a 256 "$package_lock" | awk '{ print $1 }')" = \
+            "$package_lock_sha"
+          xcodebuild test \
+            -project Speaky.xcodeproj \
+            -scheme Speaky \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/SpeakyTestsDerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SpeakyTestPackages" \
+            -disableAutomaticPackageResolution \
+            -onlyUsePackageVersionsFromResolvedFile
+          git diff --exit-code -- "$package_lock"
+
+  build:
+    if: github.repository == 'bedriyan/speaky' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment:
+      name: release-signing
+
+    steps:
+      - name: Check out tested commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.test.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Revalidate immutable release source
+        env:
+          EXPECTED_SHA: ${{ needs.test.outputs.source_sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TRUSTED_MAIN_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$EXPECTED_SHA" = "$TRUSTED_MAIN_SHA"
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$EXPECTED_SHA"
+          test "$(tr -d '[:space:]' < .github/release-contract-version)" = \
+            "$SPEAKY_RELEASE_CONTRACT_VERSION"
+          test -x scripts/verify-app-identity.sh
+          git ls-files --error-unmatch \
+            Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Verify pinned Xcode
+        run: |
+          set -euo pipefail
+          test -x "$DEVELOPER_DIR/usr/bin/xcodebuild"
+          test "$(xcodebuild -version | sed -n '1p')" = \
+            "Xcode $SPEAKY_XCODE_VERSION"
+          test "$(xcodebuild -version | sed -n '2p')" = \
+            "Build version $SPEAKY_XCODE_BUILD"
+
+      - name: Install pinned XcodeGen
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          curl --fail --silent --show-error --location \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$SPEAKY_XCODEGEN_VERSION/xcodegen.zip" \
+            --output "$archive"
+          echo "$SPEAKY_XCODEGEN_SHA256  $archive" | shasum -a 256 -c -
+          ditto -x -k "$archive" "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/xcodegen/bin/xcodegen" --version)" = \
+            "Version: $SPEAKY_XCODEGEN_VERSION"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Import stable signing identity
+        env:
+          SIGNING_P12_BASE64: ${{ secrets.SPEAKY_SIGNING_CERTIFICATE_P12 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.SPEAKY_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SIGNING_P12_BASE64:?Missing SPEAKY_SIGNING_CERTIFICATE_P12 environment secret}"
+          : "${SIGNING_P12_PASSWORD:?Missing SPEAKY_SIGNING_CERTIFICATE_PASSWORD environment secret}"
+
+          keychain_path="$RUNNER_TEMP/speaky-signing.keychain-db"
+          p12_path="$RUNNER_TEMP/speaky-signing.p12"
+          certificate_pem_path="$RUNNER_TEMP/speaky-signing.pem"
+          certificate_der_path="$RUNNER_TEMP/speaky-signing.cer"
+          keychain_password="$(openssl rand -hex 32)"
+
+          echo "SPEAKY_SIGNING_CERTIFICATE=$certificate_der_path" >> "$GITHUB_ENV"
+          echo "SPEAKY_SIGNING_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+
+          printf '%s' "$SIGNING_P12_BASE64" | base64 -D > "$p12_path"
+          chmod 600 "$p12_path"
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security import "$p12_path" \
+            -k "$keychain_path" \
+            -P "$SIGNING_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain_path"
+
+          security find-certificate -a -p "$keychain_path" > "$certificate_pem_path"
+          openssl x509 \
+            -in "$certificate_pem_path" \
+            -outform DER \
+            -out "$certificate_der_path"
+
+          sudo security add-trusted-cert \
+            -d \
+            -r trustRoot \
+            -p codeSign \
+            -k /Library/Keychains/System.keychain \
+            "$certificate_der_path"
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" |
+              awk '/^[[:space:]]*[0-9]+\)/ { print $2; exit }'
+          )"
+          test -n "$signing_identity"
+
+          echo "SPEAKY_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+
+      - name: Build and verify release DMGs
+        run: |
+          set -euo pipefail
+          ./build.sh separate
+          (
+            cd build
+            shasum -a 256 Speaky-*.dmg > SHA256SUMS.txt
+            shasum -a 256 -c SHA256SUMS.txt
+          )
+
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          if [ -n "${SPEAKY_SIGNING_CERTIFICATE:-}" ] &&
+             [ -f "$SPEAKY_SIGNING_CERTIFICATE" ]; then
+            sudo security remove-trusted-cert \
+              -d \
+              "$SPEAKY_SIGNING_CERTIFICATE"
+          fi
+          if [ -n "${SPEAKY_SIGNING_KEYCHAIN:-}" ] &&
+             [ -f "$SPEAKY_SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SPEAKY_SIGNING_KEYCHAIN"
+          fi
+          rm -f \
+            "$RUNNER_TEMP/speaky-signing.p12" \
+            "$RUNNER_TEMP/speaky-signing.pem" \
+            "$RUNNER_TEMP/speaky-signing.cer"
+          test ! -e "$RUNNER_TEMP/speaky-signing.p12"
+          test ! -e "$RUNNER_TEMP/speaky-signing.keychain-db"
+
+      - name: Upload verified artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Speaky-self-signed-${{ inputs.release_tag }}
+          path: |
+            build/Speaky-*.dmg
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

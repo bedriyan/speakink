@@ -12,8 +12,7 @@ final class ModelManager: @unchecked Sendable {
     private let modelsDirectory: URL
 
     init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        modelsDirectory = appSupport.appendingPathComponent("Speaky/Models", isDirectory: true)
+        modelsDirectory = Constants.modelsPath
         try? FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
         scanDownloadedModels()
     }
@@ -93,7 +92,7 @@ final class ModelManager: @unchecked Sendable {
 
     func isParakeetDownloaded(_ model: TranscriptionModelInfo) -> Bool {
         let version = parakeetVersion(for: model.id)
-        let cacheDir = AsrModels.defaultCacheDirectory(for: version)
+        let cacheDir = ParakeetModelPaths.cacheDirectory(for: version)
         return AsrModels.modelsExist(at: cacheDir, version: version)
     }
 
@@ -103,7 +102,7 @@ final class ModelManager: @unchecked Sendable {
     @MainActor
     func downloadParakeetModel(_ model: TranscriptionModelInfo) async throws {
         let version = parakeetVersion(for: model.id)
-        let cacheDir = AsrModels.defaultCacheDirectory(for: version)
+        let cacheDir = ParakeetModelPaths.cacheDirectory(for: version)
         let expectedBytes: Int64 = model.sizeBytes ?? 484_000_000
 
         downloadProgress[model.id] = 0
@@ -159,7 +158,7 @@ final class ModelManager: @unchecked Sendable {
         do {
             // Download + compile (AsrModels.download calls DownloadUtils.loadModels
             // internally which downloads files and compiles CoreML models)
-            _ = try await AsrModels.download(version: version)
+            _ = try await AsrModels.download(to: cacheDir, version: version)
             monitorTask.cancel()
 
             // Verify model files exist on disk
@@ -196,7 +195,7 @@ final class ModelManager: @unchecked Sendable {
 
     func deleteParakeetModel(_ model: TranscriptionModelInfo) {
         let version = parakeetVersion(for: model.id)
-        let cacheDirectory = AsrModels.defaultCacheDirectory(for: version)
+        let cacheDirectory = ParakeetModelPaths.cacheDirectory(for: version)
 
         do {
             if FileManager.default.fileExists(atPath: cacheDirectory.path) {

@@ -22,6 +22,17 @@ build/
 Packages/
 Package.resolved
 
+# The generated project is ignored except for the application dependency lock.
+!Speaky.xcodeproj/
+Speaky.xcodeproj/*
+!Speaky.xcodeproj/project.xcworkspace/
+Speaky.xcodeproj/project.xcworkspace/*
+!Speaky.xcodeproj/project.xcworkspace/xcshareddata/
+Speaky.xcodeproj/project.xcworkspace/xcshareddata/*
+!Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -34,6 +45,10 @@ Pods/
 Speaky.app/
 build-*/
 release/
+
+# Signing secrets
+*.p12
+*.pfx
 
 # AI / development tools
 .claude/

@@ -89,7 +89,11 @@ actor ParakeetEngine: TranscriptionEngine {
             models = cached
         } else {
             do {
-                models = try await AsrModels.loadFromCache(configuration: nil, version: version)
+                models = try await AsrModels.load(
+                    from: ParakeetModelPaths.cacheDirectory(for: version),
+                    configuration: nil,
+                    version: version
+                )
                 modelsBox.models = models
                 logger.info("Parakeet models loaded for first time (version: \(String(describing: self.version), privacy: .public))")
             } catch {
@@ -117,10 +121,11 @@ actor ParakeetEngine: TranscriptionEngine {
         logger.info("Parakeet engine warmed up — inference pipeline primed")
     }
 
-    func cleanup() {
+    func cleanup() async {
         logger.info("Parakeet engine cleanup")
-        asrBox.manager?.cleanup()
+        let manager = asrBox.manager
         asrBox.manager = nil
         vadBox.manager = nil
+        await manager?.cleanup()
     }
 }
