@@ -32,7 +32,6 @@ final class AppState {
     let settings = AppSettings()
     let hotkeyManager = HotkeyManager()
     let modelManager = ModelManager()
-    let updaterManager = UpdaterManager()
     private(set) var coordinator: TranscriptionCoordinator!
 
     // SwiftData container for saving transcriptions

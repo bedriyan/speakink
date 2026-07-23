@@ -1,156 +1,318 @@
 #!/bin/bash
-set -eo pipefail
+set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="Speaky"
+APP_BUNDLE_ID="com.bedriyan.speaky"
 BUILD_DIR="$PROJECT_DIR/build"
+DERIVED_DATA_DIR="$BUILD_DIR/DerivedData"
+SOURCE_PACKAGES_DIR="$BUILD_DIR/SourcePackages"
+PACKAGE_RESOLVED_PATH="$PROJECT_DIR/Speaky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 VERSION=$(grep 'MARKETING_VERSION' "$PROJECT_DIR/project.yml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-DMGBUILD_SETTINGS="$PROJECT_DIR/.github/dmgbuild-settings.py"
-DMG_BACKGROUND="$PROJECT_DIR/.github/dmg-background.png"
-DOCS_DIR="$PROJECT_DIR/docs"
+ENTITLEMENTS_PATH="$PROJECT_DIR/Speaky/Resources/Speaky.entitlements"
+IDENTITY_VERIFIER="$PROJECT_DIR/scripts/verify-app-identity.sh"
+MINIMUM_CERTIFICATE_VALIDITY_SECONDS=2592000
 
-echo "==> Generating Xcode project..."
-cd "$PROJECT_DIR"
-xcodegen generate
+BUILD_MODE="${1:-universal}"
+SIGNING_IDENTITY="${SPEAKY_SIGNING_IDENTITY:-}"
+SIGNING_CERTIFICATE="${SPEAKY_SIGNING_CERTIFICATE:-}"
+SIGNING_KEYCHAIN="${SPEAKY_SIGNING_KEYCHAIN:-}"
+ALLOW_ADHOC="${SPEAKY_ALLOW_ADHOC:-0}"
+TEMP_DIRECTORIES=()
 
-# Parse arguments
-BUILD_MODE="${1:-universal}" # universal, silicon, intel, separate
-
-# Helper: wipe DerivedData to avoid stale builds across architectures
-clean_derived_data() {
-    rm -rf ~/Library/Developer/Xcode/DerivedData/"$APP_NAME"-*
+error() {
+    echo "ERROR: $*" >&2
+    exit 1
 }
 
-# Clean DerivedData to avoid stale cached builds
-clean_derived_data
-
-# Ensure clean build output directory
-mkdir -p "$BUILD_DIR"
-
-# Helper: find the built .app in DerivedData
-find_built_app() {
-    find ~/Library/Developer/Xcode/DerivedData/"$APP_NAME"-*/Build/Products/Release \
-        -name "$APP_NAME.app" -maxdepth 1 2>/dev/null | head -1
+register_temp_directory() {
+    local variable_name="$1"
+    local directory
+    directory=$(mktemp -d "${TMPDIR:-/tmp}/speaky-build.XXXXXX")
+    TEMP_DIRECTORIES+=("$directory")
+    printf -v "$variable_name" '%s' "$directory"
 }
 
-# Helper: prepare app for distribution (strip quarantine, re-sign)
-prepare_app() {
-    local app_path="$1"
-    xattr -cr "$app_path"
-    # Deep-sign nested frameworks/bundles first, then re-sign the main app
-    # with explicit identifier so macOS Accessibility matches the bundle ID
-    codesign --force --deep --sign - "$app_path"
-    codesign --force --sign - --identifier com.bedriyan.speaky "$app_path"
+cleanup_temp_directories() {
+    local directory
+    [ "${#TEMP_DIRECTORIES[@]}" -gt 0 ] || return
+    for directory in "${TEMP_DIRECTORIES[@]}"; do
+        [ ! -d "$directory" ] || rm -rf -- "$directory"
+    done
 }
 
-# Helper: create DMG using dmgbuild (with drag-to-Applications visual)
-create_dmg() {
-    local app_path="$1"
-    local dmg_path="$2"
+trap cleanup_temp_directories EXIT
 
-    if command -v dmgbuild &>/dev/null && [ -f "$DMGBUILD_SETTINGS" ]; then
-        APP_PATH="$app_path" DMG_BACKGROUND="$DMG_BACKGROUND" \
-            dmgbuild -s "$DMGBUILD_SETTINGS" "$APP_NAME" "$dmg_path"
-    else
-        echo "    (dmgbuild not found, falling back to hdiutil)"
-        local tmpdir
-        tmpdir=$(mktemp -d)
-        ditto "$app_path" "$tmpdir/$APP_NAME.app"
-        hdiutil create -volname "$APP_NAME" -srcfolder "$tmpdir" -ov -format UDZO "$dmg_path" 2>&1 | tail -2
-        rm -rf "$tmpdir"
+certificate_sha1() {
+    openssl x509 \
+        -inform DER \
+        -in "$1" \
+        -noout \
+        -fingerprint \
+        -sha1 |
+        sed 's/.*=//' |
+        tr -d ':' |
+        tr '[:lower:]' '[:upper:]'
+}
+
+validate_signing_configuration() {
+    case "$ALLOW_ADHOC" in
+        0|1) ;;
+        *) error "SPEAKY_ALLOW_ADHOC must be either 0 or 1." ;;
+    esac
+
+    if [ -z "$SIGNING_IDENTITY" ]; then
+        if [ "$ALLOW_ADHOC" = "1" ]; then
+            SIGNING_IDENTITY="-"
+        else
+            error "Official packaging requires SPEAKY_SIGNING_IDENTITY and SPEAKY_SIGNING_CERTIFICATE.
+       For an unpublished local test build only, set SPEAKY_ALLOW_ADHOC=1."
+        fi
     fi
-}
 
-# Helper: find Sparkle tools from SPM checkout
-find_sparkle_tools() {
-    local sparkle_dir
-    sparkle_dir=$(find ~/Library/Developer/Xcode/DerivedData/"$APP_NAME"-*/SourcePackages/artifacts/sparkle \
-        -name "sign_update" -maxdepth 5 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
-    if [ -z "$sparkle_dir" ]; then
-        echo ""
-    else
-        echo "$sparkle_dir"
-    fi
-}
-
-# Helper: sign DMG with Sparkle EdDSA and generate appcast
-sparkle_sign_and_appcast() {
-    local sparkle_tools
-    sparkle_tools=$(find_sparkle_tools)
-    if [ -z "$sparkle_tools" ]; then
-        echo "    WARNING: Sparkle tools not found — skipping EdDSA signing and appcast generation"
-        echo "    (Build the project first so SPM checkouts are available)"
+    if [ "$SIGNING_IDENTITY" = "-" ]; then
+        [ "$ALLOW_ADHOC" = "1" ] ||
+            error "Ad-hoc signing requires the explicit SPEAKY_ALLOW_ADHOC=1 opt-in."
+        echo "==> Signing mode: ad hoc (local testing only)"
+        echo "    Hardened runtime is disabled for the final ad-hoc signature."
+        echo "    Do not publish this artifact."
         return
     fi
 
-    echo "==> Signing DMGs with Sparkle EdDSA..."
-    local sign_update="$sparkle_tools/sign_update"
-    local generate_appcast="$sparkle_tools/generate_appcast"
+    SIGNING_IDENTITY=$(printf '%s' "$SIGNING_IDENTITY" | tr '[:lower:]' '[:upper:]')
+    [[ "$SIGNING_IDENTITY" =~ ^[0-9A-F]{40}$ ]] ||
+        error "SPEAKY_SIGNING_IDENTITY must be the certificate's 40-character SHA-1 hash."
 
-    # Create arch-specific staging dirs for appcast generation
-    local arm64_dir="$BUILD_DIR/appcast-arm64"
-    local x86_dir="$BUILD_DIR/appcast-x86_64"
-    rm -rf "$arm64_dir" "$x86_dir"
-    mkdir -p "$arm64_dir" "$x86_dir"
+    [ -n "$SIGNING_CERTIFICATE" ] && [ -f "$SIGNING_CERTIFICATE" ] ||
+        error "SPEAKY_SIGNING_CERTIFICATE must point to the matching public DER certificate."
+    case "$SIGNING_CERTIFICATE" in
+        /*) ;;
+        *) error "SPEAKY_SIGNING_CERTIFICATE must be an absolute path." ;;
+    esac
 
-    # Copy and sign arch-specific DMGs
-    local arm64_dmg="$BUILD_DIR/$APP_NAME-$VERSION-Apple-Silicon.dmg"
-    local x86_dmg="$BUILD_DIR/$APP_NAME-$VERSION-Intel.dmg"
+    if [ -n "$SIGNING_KEYCHAIN" ] && [ ! -f "$SIGNING_KEYCHAIN" ]; then
+        error "SPEAKY_SIGNING_KEYCHAIN does not exist: $SIGNING_KEYCHAIN"
+    fi
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        case "$SIGNING_KEYCHAIN" in
+            /*) ;;
+            *) error "SPEAKY_SIGNING_KEYCHAIN must be an absolute path." ;;
+        esac
+        SIGNING_KEYCHAIN="$(
+            cd "$(dirname "$SIGNING_KEYCHAIN")"
+            printf '%s/%s' "$(pwd -P)" "$(basename "$SIGNING_KEYCHAIN")"
+        )"
 
-    if [ -f "$arm64_dmg" ]; then
-        cp "$arm64_dmg" "$arm64_dir/"
-        echo "    Signing: $(basename "$arm64_dmg")"
-        "$sign_update" "$arm64_dir/$(basename "$arm64_dmg")" 2>&1 | head -1 || true
+        local keychain_search_list
+        keychain_search_list=$(
+            security list-keychains -d user |
+                sed 's/^[[:space:]"]*//; s/[[:space:]"]*$//'
+        )
+        printf '%s\n' "$keychain_search_list" | grep -Fxq "$SIGNING_KEYCHAIN" ||
+            error "SPEAKY_SIGNING_KEYCHAIN must be on the user keychain search list.
+       Add it with: security list-keychains -d user -s \"$SIGNING_KEYCHAIN\" <existing-keychains...>"
     fi
 
-    if [ -f "$x86_dmg" ]; then
-        cp "$x86_dmg" "$x86_dir/"
-        echo "    Signing: $(basename "$x86_dmg")"
-        "$sign_update" "$x86_dir/$(basename "$x86_dmg")" 2>&1 | head -1 || true
+    openssl x509 \
+        -inform DER \
+        -in "$SIGNING_CERTIFICATE" \
+        -noout \
+        -checkend "$MINIMUM_CERTIFICATE_VALIDITY_SECONDS" >/dev/null ||
+        error "The release signing certificate is invalid or expires within 30 days.
+       Complete the documented certificate migration before publishing another release."
+    openssl x509 -inform DER -in "$SIGNING_CERTIFICATE" -noout -text |
+        grep -Fq "Code Signing" ||
+        error "The release certificate is not valid for code signing."
+
+    local expected_sha1
+    expected_sha1=$(certificate_sha1 "$SIGNING_CERTIFICATE")
+    [ "$SIGNING_IDENTITY" = "$expected_sha1" ] ||
+        error "The public certificate does not match SPEAKY_SIGNING_IDENTITY.
+       Certificate: $expected_sha1
+       Identity:    $SIGNING_IDENTITY"
+
+    local identity_output
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        identity_output=$(security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" || true)
+    else
+        identity_output=$(security find-identity -v -p codesigning || true)
     fi
+    printf '%s\n' "$identity_output" | grep -Fq "$SIGNING_IDENTITY" ||
+        error "Code-signing identity '$SIGNING_IDENTITY' is not available."
 
-    echo "==> Generating appcasts..."
-    local download_url_prefix="https://github.com/bedriyan/speaky/releases/download/v$VERSION"
-
-    if [ -f "$arm64_dmg" ]; then
-        "$generate_appcast" --download-url-prefix "$download_url_prefix/" "$arm64_dir" 2>&1 | tail -3 || true
-        if [ -f "$arm64_dir/appcast.xml" ]; then
-            mkdir -p "$DOCS_DIR"
-            cp "$arm64_dir/appcast.xml" "$DOCS_DIR/appcast-arm64.xml"
-            echo "    Created: docs/appcast-arm64.xml"
-        fi
-    fi
-
-    if [ -f "$x86_dmg" ]; then
-        "$generate_appcast" --download-url-prefix "$download_url_prefix/" "$x86_dir" 2>&1 | tail -3 || true
-        if [ -f "$x86_dir/appcast.xml" ]; then
-            mkdir -p "$DOCS_DIR"
-            cp "$x86_dir/appcast.xml" "$DOCS_DIR/appcast-x86_64.xml"
-            echo "    Created: docs/appcast-x86_64.xml"
-        fi
-    fi
-
-    # Cleanup staging
-    rm -rf "$arm64_dir" "$x86_dir"
+    echo "==> Signing mode: stable self-signed identity"
+    echo "    Certificate SHA-1: $SIGNING_IDENTITY"
+    echo "    Requirement anchor: $SIGNING_CERTIFICATE"
 }
 
-# Helper: sign and package a single build into a DMG
-package_build() {
-    local suffix="$1"  # e.g. "Apple-Silicon", "Intel", "Universal", or ""
-    local dmg_name
+codesign_item() {
+    local code_path="$1"
+    local arguments=(
+        --force
+        --sign "$SIGNING_IDENTITY"
+        --timestamp=none
+    )
 
-    BUILT_APP=$(find_built_app)
-    if [ -z "$BUILT_APP" ]; then
-        echo "ERROR: Build product not found!"
-        exit 1
+    if [ "$SIGNING_IDENTITY" != "-" ]; then
+        arguments+=(--options runtime)
+    fi
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        arguments+=(--keychain "$SIGNING_KEYCHAIN")
+    fi
+    codesign "${arguments[@]}" "$code_path"
+}
+
+sign_nested_code() {
+    local app_path="$1"
+    local frameworks_path="$app_path/Contents/Frameworks"
+    local code_path
+
+    if [ -d "$frameworks_path" ]; then
+        while IFS= read -r -d '' code_path; do
+            codesign_item "$code_path"
+        done < <(
+            find "$frameworks_path" -mindepth 1 -maxdepth 1 \
+                \( -type d -name "*.framework" -o -type f -name "*.dylib" \) \
+                -print0
+        )
     fi
 
-    echo "    Arch: $(lipo -info "$BUILT_APP/Contents/MacOS/$APP_NAME" 2>&1)"
+    for code_path in \
+        "$app_path"/Contents/PlugIns/*.appex \
+        "$app_path"/Contents/PlugIns/*.xpc \
+        "$app_path"/Contents/Library/LoginItems/*.app; do
+        [ -e "$code_path" ] || continue
+        codesign_item "$code_path"
+    done
+}
 
-    # Stage, sign, and create DMG
+prepare_app() {
+    local app_path="$1"
+    local info_plist="$app_path/Contents/Info.plist"
+    local bundle_id
+    local executable_name
+    local arguments=()
+
+    xattr -cr "$app_path"
+    bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$info_plist")
+    executable_name=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$info_plist")
+
+    [ "$bundle_id" = "$APP_BUNDLE_ID" ] ||
+        error "Expected bundle identifier '$APP_BUNDLE_ID', found '$bundle_id'."
+    [ -x "$app_path/Contents/MacOS/$executable_name" ] ||
+        error "Bundle executable '$executable_name' is missing."
+
+    sign_nested_code "$app_path"
+
+    arguments=(
+        --force
+        --sign "$SIGNING_IDENTITY"
+        --timestamp=none
+        --entitlements "$ENTITLEMENTS_PATH"
+        --identifier "$APP_BUNDLE_ID"
+    )
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        arguments+=(--keychain "$SIGNING_KEYCHAIN")
+    fi
+
+    if [ "$SIGNING_IDENTITY" != "-" ]; then
+        local designated_requirement
+        designated_requirement="designated => anchor \"$SIGNING_CERTIFICATE\" and identifier \"$APP_BUNDLE_ID\""
+        arguments+=(
+            --options runtime
+            --requirements "=$designated_requirement"
+        )
+    fi
+
+    codesign "${arguments[@]}" "$app_path"
+    codesign --verify --deep --strict --verbose=2 "$app_path"
+
+    if [ "$SIGNING_IDENTITY" != "-" ]; then
+        SPEAKY_SIGNING_CERTIFICATE="$SIGNING_CERTIFICATE" \
+            "$IDENTITY_VERIFIER" "$app_path"
+    fi
+
+    echo "    Bundle ID: $bundle_id"
+    echo "    Designated requirement:"
+    codesign -d -r- "$app_path" 2>&1 | sed 's/^/        /'
+}
+
+create_dmg() {
+    local app_path="$1"
+    local dmg_path="$2"
+    local temporary_directory
+
+    register_temp_directory temporary_directory
+    ditto "$app_path" "$temporary_directory/$APP_NAME.app"
+    ln -s /Applications "$temporary_directory/Applications"
+    hdiutil create \
+        -volname "$APP_NAME" \
+        -srcfolder "$temporary_directory" \
+        -ov \
+        -format UDZO \
+        "$dmg_path"
+    hdiutil verify "$dmg_path" >/dev/null
+    rm -rf -- "$temporary_directory"
+}
+
+clean_build_products() {
+    xcodebuild \
+        -project "$APP_NAME.xcodeproj" \
+        -scheme "$APP_NAME" \
+        -derivedDataPath "$DERIVED_DATA_DIR" \
+        -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+        -disableAutomaticPackageResolution \
+        -onlyUsePackageVersionsFromResolvedFile \
+        clean >/dev/null
+}
+
+build_architectures() {
+    local architectures="$1"
+    clean_build_products
+    xcodebuild \
+        -project "$APP_NAME.xcodeproj" \
+        -scheme "$APP_NAME" \
+        -configuration Release \
+        -destination "platform=macOS" \
+        -derivedDataPath "$DERIVED_DATA_DIR" \
+        -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
+        -disableAutomaticPackageResolution \
+        -onlyUsePackageVersionsFromResolvedFile \
+        ARCHS="$architectures" \
+        ONLY_ACTIVE_ARCH=NO \
+        -quiet \
+        build
+}
+
+package_build() {
+    local suffix="$1"
+    local expected_architectures="$2"
+    local built_app="$DERIVED_DATA_DIR/Build/Products/Release/$APP_NAME.app"
+    local executable_path="$built_app/Contents/MacOS/$APP_NAME"
+    local actual_architectures
+    local normalized_actual_architectures
+    local normalized_expected_architectures
+    local dmg_name
     local stage_dir
-    stage_dir=$(mktemp -d)
-    ditto "$BUILT_APP" "$stage_dir/$APP_NAME.app"
+
+    [ -d "$built_app" ] || error "Build product not found: $built_app"
+    actual_architectures=$(lipo -archs "$executable_path")
+    normalized_actual_architectures=$(
+        for architecture in $actual_architectures; do
+            printf '%s\n' "$architecture"
+        done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
+    )
+    normalized_expected_architectures=$(
+        for architecture in $expected_architectures; do
+            printf '%s\n' "$architecture"
+        done | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//'
+    )
+    [ "$normalized_actual_architectures" = "$normalized_expected_architectures" ] ||
+        error "Expected architectures '$expected_architectures', found '$actual_architectures'."
+    echo "    Architectures: $actual_architectures"
+
+    register_temp_directory stage_dir
+    ditto "$built_app" "$stage_dir/$APP_NAME.app"
     prepare_app "$stage_dir/$APP_NAME.app"
 
     if [ -n "$suffix" ]; then
@@ -162,59 +324,62 @@ package_build() {
     echo "==> Creating DMG: $dmg_name..."
     rm -f "$BUILD_DIR/$dmg_name"
     create_dmg "$stage_dir/$APP_NAME.app" "$BUILD_DIR/$dmg_name"
-    rm -rf "$stage_dir"
-
+    rm -rf -- "$stage_dir"
     echo "    $BUILD_DIR/$dmg_name"
 }
 
 case "$BUILD_MODE" in
-  silicon)
-    echo "==> Building $APP_NAME (Release, Apple Silicon only)..."
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
-        ARCHS="arm64" ONLY_ACTIVE_ARCH=NO \
-        build 2>&1 | tail -5
-    package_build "Apple-Silicon"
-    ;;
-  intel)
-    echo "==> Building $APP_NAME (Release, Intel only)..."
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
-        ARCHS="x86_64" ONLY_ACTIVE_ARCH=NO \
-        build 2>&1 | tail -5
-    package_build "Intel"
-    ;;
-  separate)
-    # --- Apple Silicon ---
-    echo "==> Building $APP_NAME (Release, Apple Silicon)..."
-    clean_derived_data
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
-        ARCHS="arm64" ONLY_ACTIVE_ARCH=NO \
-        build 2>&1 | tail -5
-    package_build "Apple-Silicon"
-
-    # --- Intel ---
-    echo "==> Building $APP_NAME (Release, Intel)..."
-    clean_derived_data
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
-        ARCHS="x86_64" ONLY_ACTIVE_ARCH=NO \
-        build 2>&1 | tail -5
-    package_build "Intel"
-    ;;
-  universal|*)
-    echo "==> Building $APP_NAME (Release, Universal Binary)..."
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" -configuration Release \
-        ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-        build 2>&1 | tail -5
-    package_build ""
-    ;;
+    silicon|intel|separate|universal) ;;
+    *) error "Unknown build mode '$BUILD_MODE'. Use universal, silicon, intel, or separate." ;;
 esac
 
-# Generate Sparkle appcasts for separate builds
-if [ "$BUILD_MODE" = "separate" ]; then
-    sparkle_sign_and_appcast
-fi
+echo "==> Generating Xcode project..."
+cd "$PROJECT_DIR"
+[ -f "$PACKAGE_RESOLVED_PATH" ] ||
+    error "Tracked dependency lock is missing: $PACKAGE_RESOLVED_PATH"
+PACKAGE_RESOLVED_SHA=$(
+    shasum -a 256 "$PACKAGE_RESOLVED_PATH" |
+        awk '{ print $1 }'
+)
+xcodegen generate
+[ -f "$PACKAGE_RESOLVED_PATH" ] ||
+    error "XcodeGen removed the tracked dependency lock: $PACKAGE_RESOLVED_PATH"
+[ "$(
+    shasum -a 256 "$PACKAGE_RESOLVED_PATH" |
+        awk '{ print $1 }'
+)" = "$PACKAGE_RESOLVED_SHA" ] ||
+    error "XcodeGen changed the tracked dependency lock."
+mkdir -p "$BUILD_DIR" "$SOURCE_PACKAGES_DIR"
+validate_signing_configuration
+
+case "$BUILD_MODE" in
+    silicon)
+        echo "==> Building $APP_NAME (Release, Apple Silicon)..."
+        build_architectures "arm64"
+        package_build "Apple-Silicon" "arm64"
+        ;;
+    intel)
+        echo "==> Building $APP_NAME (Release, Intel)..."
+        build_architectures "x86_64"
+        package_build "Intel" "x86_64"
+        ;;
+    separate)
+        echo "==> Building $APP_NAME (Release, Apple Silicon)..."
+        build_architectures "arm64"
+        package_build "Apple-Silicon" "arm64"
+
+        echo "==> Building $APP_NAME (Release, Intel)..."
+        build_architectures "x86_64"
+        package_build "Intel" "x86_64"
+        ;;
+    universal)
+        echo "==> Building $APP_NAME (Release, Universal Binary)..."
+        build_architectures "arm64 x86_64"
+        package_build "" "arm64 x86_64"
+        ;;
+esac
 
 echo ""
 echo "==> Build complete!"
-ls -lh "$BUILD_DIR/$APP_NAME-$VERSION"*.dmg 2>/dev/null | awk '{print "    " $5 "\t" $NF}'
-echo ""
-echo "Install from the DMG in build/ directory."
+find "$BUILD_DIR" -maxdepth 1 -name "$APP_NAME-$VERSION*.dmg" -exec ls -lh {} \; |
+    awk '{print "    " $5 "\t" $NF}'

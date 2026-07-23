@@ -7,6 +7,7 @@ import Foundation
 struct TranscriptionCoordinatorTests {
 
     private func makeCoordinator(
+        settings: AppSettings? = nil,
         audioRecorder: MockAudioRecorder = MockAudioRecorder(),
         pasteService: MockPasteService = MockPasteService(),
         audioControl: MockAudioControl = MockAudioControl(),
@@ -15,9 +16,9 @@ struct TranscriptionCoordinatorTests {
         soundEffect: MockSoundEffect = MockSoundEffect(),
         playbackController: MockPlaybackController = MockPlaybackController()
     ) -> (TranscriptionCoordinator, MockAudioRecorder, MockPasteService, MockAudioControl, MockDeviceGuard, MockSoundEffect, MockPlaybackController) {
-        let settings = AppSettings()
+        let resolvedSettings = settings ?? makeSettings()
         let coordinator = TranscriptionCoordinator(
-            settings: settings,
+            settings: resolvedSettings,
             audioRecorder: audioRecorder,
             pasteService: pasteService,
             audioControl: audioControl,
@@ -27,6 +28,10 @@ struct TranscriptionCoordinatorTests {
             playbackController: playbackController
         )
         return (coordinator, audioRecorder, pasteService, audioControl, deviceGuard, soundEffect, playbackController)
+    }
+
+    private func makeSettings() -> AppSettings {
+        AppSettings(store: InMemorySettingsStore())
     }
 
     @Test("startRecording calls audio recorder")
@@ -40,7 +45,7 @@ struct TranscriptionCoordinatorTests {
     @Test("startRecording locks device guard when device is selected")
     func startRecordingLocksDevice() throws {
         let guard_ = MockDeviceGuard()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.selectedAudioDevice = 42
         let coordinator = TranscriptionCoordinator(
             settings: settings,
@@ -59,7 +64,7 @@ struct TranscriptionCoordinatorTests {
     @Test("startRecording pauses playback when pauseMedia mode")
     func startRecordingPausesPlayback() throws {
         let playback = MockPlaybackController()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.backgroundAudioMode = .pauseMedia
         let coordinator = TranscriptionCoordinator(
             settings: settings,
@@ -78,7 +83,7 @@ struct TranscriptionCoordinatorTests {
     @Test("startRecording does not pause media in muteSystemAudio mode")
     func startRecordingMutesSystemAudio() throws {
         let playback = MockPlaybackController()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.backgroundAudioMode = .muteSystemAudio
         let coordinator = TranscriptionCoordinator(
             settings: settings,
@@ -97,7 +102,7 @@ struct TranscriptionCoordinatorTests {
     @Test("startRecording skips pause when background audio mode is off")
     func startRecordingSkipsPauseWhenOff() throws {
         let playback = MockPlaybackController()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.backgroundAudioMode = .off
         let coordinator = TranscriptionCoordinator(
             settings: settings,
@@ -124,7 +129,10 @@ struct TranscriptionCoordinatorTests {
         let control = MockAudioControl()
         let guard_ = MockDeviceGuard()
         let playback = MockPlaybackController()
+        let settings = makeSettings()
+        settings.backgroundAudioMode = .pauseMedia
         let (coordinator, _, _, _, _, _, _) = makeCoordinator(
+            settings: settings,
             audioRecorder: recorder,
             audioControl: control,
             deviceGuard: guard_,
@@ -148,7 +156,10 @@ struct TranscriptionCoordinatorTests {
         let control = MockAudioControl()
         let guard_ = MockDeviceGuard()
         let playback = MockPlaybackController()
+        let settings = makeSettings()
+        settings.backgroundAudioMode = .pauseMedia
         let (coordinator, _, _, _, _, _, _) = makeCoordinator(
+            settings: settings,
             audioRecorder: recorder,
             audioControl: control,
             deviceGuard: guard_,
@@ -165,7 +176,7 @@ struct TranscriptionCoordinatorTests {
     @Test("playStartSoundAndMute mutes in muteSystemAudio mode")
     func playStartSoundRespectsSettings() async {
         let sound = MockSoundEffect()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.soundEffectsEnabled = true
         settings.backgroundAudioMode = .muteSystemAudio
 
@@ -189,7 +200,7 @@ struct TranscriptionCoordinatorTests {
     @Test("playStartSoundAndMute does not mute in pauseMedia mode")
     func playStartSoundSkipsMuteInPauseMode() async {
         let sound = MockSoundEffect()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.soundEffectsEnabled = true
         settings.backgroundAudioMode = .pauseMedia
 
@@ -213,7 +224,7 @@ struct TranscriptionCoordinatorTests {
     @Test("playStartSoundAndMute skips everything when off")
     func playStartSoundSkipsWhenOff() async {
         let sound = MockSoundEffect()
-        let settings = AppSettings()
+        let settings = makeSettings()
         settings.soundEffectsEnabled = false
         settings.backgroundAudioMode = .off
 

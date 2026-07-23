@@ -2,14 +2,32 @@ import Foundation
 import AVFoundation
 
 enum Constants {
+    static let appSupportFolderName: String = {
+        #if DEBUG
+        return "Speaky Debug"
+        #else
+        return "Speaky"
+        #endif
+    }()
+
     static let appSupportPath: URL = {
         let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Speaky", isDirectory: true)
+            .appendingPathComponent(appSupportFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()
 
     static let modelsPath = appSupportPath.appendingPathComponent("Models", isDirectory: true)
+
+    static let transcriptionStorePath: URL = {
+        #if DEBUG
+        return appSupportPath.appendingPathComponent("default.store")
+        #else
+        // Preserve the location used implicitly by existing Release builds.
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("default.store")
+        #endif
+    }()
 
     static let recordingsPath: URL = {
         let url = appSupportPath.appendingPathComponent("Recordings", isDirectory: true)
@@ -37,7 +55,13 @@ enum Constants {
         static let escape: UInt16 = 53
     }
 
-    static let keychainService = "speaky"
+    static let keychainService: String = {
+        #if DEBUG
+        return "speaky-debug"
+        #else
+        return "speaky"
+        #endif
+    }()
     static let groqAPIKeyAccount = "groq-api-key"
 
     enum Groq {

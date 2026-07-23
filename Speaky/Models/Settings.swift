@@ -3,6 +3,15 @@ import os
 
 private let settingsLogger = Logger.speaky(category: "Settings")
 
+protocol SettingsStore: AnyObject {
+    func object(forKey defaultName: String) -> Any?
+    func string(forKey defaultName: String) -> String?
+    func set(_ value: Any?, forKey defaultName: String)
+    func removeObject(forKey defaultName: String)
+}
+
+extension UserDefaults: SettingsStore {}
+
 /// Controls when the transcription engine is unloaded from memory after idle.
 enum EngineUnloadOption: String, CaseIterable {
     case never
@@ -77,41 +86,40 @@ enum BackgroundAudioMode: String, CaseIterable {
 
 @Observable
 final class AppSettings {
+    private let store: any SettingsStore
+
     var selectedModelID: String {
-        didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModelID") }
+        didSet { store.set(selectedModelID, forKey: "selectedModelID") }
     }
     var language: String {
-        didSet { UserDefaults.standard.set(language, forKey: "language") }
+        didSet { store.set(language, forKey: "language") }
     }
     var backgroundAudioMode: BackgroundAudioMode {
-        didSet { UserDefaults.standard.set(backgroundAudioMode.rawValue, forKey: "backgroundAudioMode") }
+        didSet { store.set(backgroundAudioMode.rawValue, forKey: "backgroundAudioMode") }
     }
     var selectedAudioDevice: UInt32? {
         didSet {
             if let device = selectedAudioDevice {
-                UserDefaults.standard.set(device, forKey: "selectedAudioDevice")
+                store.set(device, forKey: "selectedAudioDevice")
             } else {
-                UserDefaults.standard.removeObject(forKey: "selectedAudioDevice")
+                store.removeObject(forKey: "selectedAudioDevice")
             }
         }
     }
     var autoPaste: Bool {
-        didSet { UserDefaults.standard.set(autoPaste, forKey: "autoPaste") }
+        didSet { store.set(autoPaste, forKey: "autoPaste") }
     }
     var cleanUpTranscriptions: Bool {
-        didSet { UserDefaults.standard.set(cleanUpTranscriptions, forKey: "cleanUpTranscriptions") }
+        didSet { store.set(cleanUpTranscriptions, forKey: "cleanUpTranscriptions") }
     }
     var autoUnloadTimeout: TimeInterval {
-        didSet { UserDefaults.standard.set(autoUnloadTimeout, forKey: "autoUnloadTimeout") }
+        didSet { store.set(autoUnloadTimeout, forKey: "autoUnloadTimeout") }
     }
     var soundEffectsEnabled: Bool {
-        didSet { UserDefaults.standard.set(soundEffectsEnabled, forKey: "soundEffectsEnabled") }
-    }
-    var checkForUpdates: Bool {
-        didSet { UserDefaults.standard.set(checkForUpdates, forKey: "checkForUpdates") }
+        didSet { store.set(soundEffectsEnabled, forKey: "soundEffectsEnabled") }
     }
     var cleanupInterval: String {
-        didSet { UserDefaults.standard.set(cleanupInterval, forKey: "cleanupInterval") }
+        didSet { store.set(cleanupInterval, forKey: "cleanupInterval") }
     }
     var cleanupIntervalEnum: CleanupInterval {
         CleanupInterval(rawValue: cleanupInterval) ?? .never
@@ -124,7 +132,9 @@ final class AppSettings {
         TranscriptionModels.find(selectedModelID) ?? TranscriptionModels.available[0]
     }
 
-    init() {
+    init(store: any SettingsStore = UserDefaults.standard) {
+        self.store = store
+
         // Architecture-aware default model
         let defaultModel: String = {
             #if arch(arm64)
@@ -135,7 +145,7 @@ final class AppSettings {
         }()
 
         // Migrate away from removed models (cloud engines, low-quality, incompatible mel bins)
-        let savedModel = UserDefaults.standard.string(forKey: "selectedModelID") ?? defaultModel
+        let savedModel = store.string(forKey: "selectedModelID") ?? defaultModel
         let removedModelIDs: Set<String> = [
             "deepgram-nova-3",
             "whisper-large-v3-turbo", "whisper-large-v3"
@@ -151,31 +161,30 @@ final class AppSettings {
 
         if allRemoved.contains(savedModel) {
             self.selectedModelID = defaultModel
-            UserDefaults.standard.set(defaultModel, forKey: "selectedModelID")
+            store.set(defaultModel, forKey: "selectedModelID")
         } else {
             self.selectedModelID = savedModel
         }
-        self.language = UserDefaults.standard.string(forKey: "language") ?? "auto"
-        if let savedMode = UserDefaults.standard.string(forKey: "backgroundAudioMode"),
+        self.language = store.string(forKey: "language") ?? "auto"
+        if let savedMode = store.string(forKey: "backgroundAudioMode"),
            let mode = BackgroundAudioMode(rawValue: savedMode) {
             self.backgroundAudioMode = mode
         } else {
             self.backgroundAudioMode = .pauseMedia
         }
-        self.autoPaste = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
-        self.cleanUpTranscriptions = UserDefaults.standard.object(forKey: "cleanUpTranscriptions") as? Bool ?? true
+        self.autoPaste = store.object(forKey: "autoPaste") as? Bool ?? true
+        self.cleanUpTranscriptions = store.object(forKey: "cleanUpTranscriptions") as? Bool ?? true
         // Default: 0 (never unload) — keeps model in memory for instant transcriptions.
         // Migrate users on the old 300s default to "never" since it caused cold-start issues.
-        let savedTimeout = UserDefaults.standard.object(forKey: "autoUnloadTimeout") as? TimeInterval
+        let savedTimeout = store.object(forKey: "autoUnloadTimeout") as? TimeInterval
         if savedTimeout == 300 || savedTimeout == nil {
             self.autoUnloadTimeout = 0
         } else {
             self.autoUnloadTimeout = savedTimeout!
         }
-        self.soundEffectsEnabled = UserDefaults.standard.object(forKey: "soundEffectsEnabled") as? Bool ?? true
-        self.checkForUpdates = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true
-        self.cleanupInterval = UserDefaults.standard.string(forKey: "cleanupInterval") ?? "Never"
-        let deviceVal = UserDefaults.standard.object(forKey: "selectedAudioDevice") as? UInt32
+        self.soundEffectsEnabled = store.object(forKey: "soundEffectsEnabled") as? Bool ?? true
+        self.cleanupInterval = store.string(forKey: "cleanupInterval") ?? "Never"
+        let deviceVal = store.object(forKey: "selectedAudioDevice") as? UInt32
         self.selectedAudioDevice = deviceVal
     }
 }

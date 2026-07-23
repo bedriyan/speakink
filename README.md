@@ -28,17 +28,25 @@
 | [**Speaky-Apple-Silicon.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.4-Apple-Silicon.dmg) | Apple Silicon (M1/M2/M3/M4) | Parakeet V3 |
 | [**Speaky-Intel.dmg**](https://github.com/bedriyan/speaky/releases/latest/download/Speaky-2.0.4-Intel.dmg) | Intel (x86_64) | Whisper Medium Q5 |
 
+> **Release identity note:** The v2.0.4 artifacts predate the stable self-signed release process documented in this repository. The maintainer should identify the first release produced with the new process in its release notes.
+
 ### Installation
 
 1. Download the DMG for your Mac.
 2. Open the DMG and drag **Speaky** to the **Applications** folder.
-3. Before first launch, open Terminal and run:
-   ```bash
-   xattr -cr /Applications/Speaky.app
-   ```
-4. Open Speaky from Applications. On first launch, you may need to **right-click > Open**.
+3. Open Speaky from Applications.
+4. If macOS blocks the first launch, open **System Settings → Privacy & Security**, select **Open Anyway**, and confirm.
+5. Grant microphone and Accessibility access when requested.
 
-> **Why is this needed?** Speaky is open-source and not notarized with Apple ($99/year requirement). The `xattr` command tells macOS you trust this app. You only need to do this once.
+> **Why is approval needed?** Speaky releases are not notarized by Apple. Only approve an app downloaded from the official GitHub Release.
+
+See [Install Speaky on macOS](docs/end-user-installation.md) for architecture selection, checksum verification, permissions, upgrades, and troubleshooting.
+
+### Accessibility permissions across updates
+
+Beginning with the first release produced by the documented free signing process, official Speaky releases should use the same stable identity so macOS recognizes updates as the same Accessibility client. Contributor builds use a separate **Speaky Debug** identity and separate mutable data.
+
+If an older ad-hoc build created duplicate Speaky entries in System Settings, follow the [one-time upgrade cleanup](docs/end-user-installation.md#upgrading-from-an-older-ad-hoc-release).
 
 ## Features
 
@@ -77,22 +85,36 @@ You can also import any custom Whisper `.bin` model via Settings > Advanced > Im
 
 ## Build from Source
 
-Speaky uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) to generate the Xcode project.
+Speaky uses [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46.0 to generate the Xcode project.
 
 ```bash
 # Install xcodegen
 brew install xcodegen
+xcodegen --version  # Must report Version: 2.46.0
 
-# Generate project and build
+# Generate the project
 xcodegen generate
-xcodebuild -project Speaky.xcodeproj -scheme Speaky -configuration Release build
 
-# Or use the build script for release builds
-./build.sh              # Universal binary
-./build.sh silicon      # Apple Silicon only
-./build.sh intel        # Intel only
-./build.sh separate     # Both architectures + DMGs
+# Routine contributor builds use "Speaky Debug" and
+# com.bedriyan.speaky.debug so they do not conflict with an installed release.
+xcodebuild \
+  -project Speaky.xcodeproj \
+  -scheme Speaky \
+  -configuration Debug \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
+  build
+
+# Unpublished local DMGs require an explicit ad-hoc opt-in
+SPEAKY_ALLOW_ADHOC=1 ./build.sh              # Universal binary
+SPEAKY_ALLOW_ADHOC=1 ./build.sh silicon      # Apple Silicon only
+SPEAKY_ALLOW_ADHOC=1 ./build.sh intel        # Intel only
+SPEAKY_ALLOW_ADHOC=1 ./build.sh separate     # Both architectures + DMGs
 ```
+
+The packaging script fails closed unless it receives the canonical stable identity or the explicit local-only ad-hoc opt-in. Release maintainers should complete [Maintainer release-signing setup](docs/maintainer-setup.md) once, then follow [Release build and signing](docs/build-signing.md) for every version.
+
+Prefer the Debug build for day-to-day development. An ad-hoc Release DMG uses the production bundle identifier, must not be published, and should not be installed alongside an official release.
 
 ## Architecture
 
