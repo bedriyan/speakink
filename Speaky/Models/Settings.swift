@@ -77,6 +77,8 @@ enum BackgroundAudioMode: String, CaseIterable {
 
 @Observable
 final class AppSettings {
+    static let showInDockDefaultsKey = "showInDock"
+
     var selectedModelID: String {
         didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModelID") }
     }
@@ -109,6 +111,9 @@ final class AppSettings {
     }
     var checkForUpdates: Bool {
         didSet { UserDefaults.standard.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
+    var showInDock: Bool {
+        didSet { UserDefaults.standard.set(showInDock, forKey: Self.showInDockDefaultsKey) }
     }
     var cleanupInterval: String {
         didSet { UserDefaults.standard.set(cleanupInterval, forKey: "cleanupInterval") }
@@ -174,6 +179,7 @@ final class AppSettings {
         }
         self.soundEffectsEnabled = UserDefaults.standard.object(forKey: "soundEffectsEnabled") as? Bool ?? true
         self.checkForUpdates = UserDefaults.standard.object(forKey: "checkForUpdates") as? Bool ?? true
+        self.showInDock = UserDefaults.standard.object(forKey: Self.showInDockDefaultsKey) as? Bool ?? false
         self.cleanupInterval = UserDefaults.standard.string(forKey: "cleanupInterval") ?? "Never"
         let deviceVal = UserDefaults.standard.object(forKey: "selectedAudioDevice") as? UInt32
         self.selectedAudioDevice = deviceVal
