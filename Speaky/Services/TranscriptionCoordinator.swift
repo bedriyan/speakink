@@ -23,6 +23,7 @@ final class TranscriptionCoordinator {
     private var currentEngineModelID: String?
     private var engineUnloadTask: Task<Void, Never>?
     private var levelMonitor: AudioLevelMonitor?
+    private var startFeedbackTask: Task<Void, Never>?
 
     private let settings: AppSettings
 
@@ -198,6 +199,7 @@ final class TranscriptionCoordinator {
     private var backgroundLoadTask: Task<Void, Never>?
 
     func startRecording(onLevelsUpdate: @escaping @Sendable ([Float]) -> Void) throws {
+        cancelRecordingFeedback()
         engineUnloadTask?.cancel()
         engineUnloadTask = nil
 
@@ -247,18 +249,35 @@ final class TranscriptionCoordinator {
         }
     }
 
-    func playStartSoundAndMute() async {
-        if settings.soundEffectsEnabled {
-            await soundEffect.playStartAndWait()
-        }
-        // System-level mute — only in muteSystemAudio mode.
-        // Mutes system volume so media keeps playing visually but silently.
-        if settings.backgroundAudioMode == .muteSystemAudio {
-            audioControl.mute()
+    func startRecordingFeedback(
+        while isRecording: @escaping @MainActor @Sendable () -> Bool
+    ) {
+        cancelRecordingFeedback()
+        startFeedbackTask = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+
+            if settings.soundEffectsEnabled {
+                await soundEffect.playStartAndWait()
+            }
+
+            guard !Task.isCancelled, isRecording() else { return }
+
+            // System-level mute — only after the start sound for the current recording.
+            if settings.backgroundAudioMode == .muteSystemAudio {
+                audioControl.mute()
+            }
         }
     }
 
+    func cancelRecordingFeedback() {
+        guard let task = startFeedbackTask else { return }
+        task.cancel()
+        startFeedbackTask = nil
+        soundEffect.stopStart()
+    }
+
     func stopRecording() throws -> URL {
+        cancelRecordingFeedback()
         let url = try audioRecorder.stop()
         levelMonitor = nil
         if settings.backgroundAudioMode == .muteSystemAudio {
@@ -273,6 +292,7 @@ final class TranscriptionCoordinator {
     }
 
     func cancelRecording() {
+        cancelRecordingFeedback()
         do {
             let audioURL = try audioRecorder.stop()
             try? FileManager.default.removeItem(at: audioURL)

@@ -124,7 +124,7 @@ struct OnboardingPermissionsView: View {
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
 
-                Text("Speaky needs microphone access to record and accessibility access to paste text.")
+                Text("Speaky needs microphone access to record and Accessibility access for auto-paste and global Escape cancellation.")
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)

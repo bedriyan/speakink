@@ -66,10 +66,33 @@ final class MockDeviceGuard: DeviceGuarding, @unchecked Sendable {
 @MainActor
 final class MockSoundEffect: SoundEffecting {
     var playStartCalled = false
+    var playStartCallCount = 0
+    var stopStartCallCount = 0
     var playEndCalled = false
+    var waitsForStartCompletion = false
+    private var startContinuation: CheckedContinuation<Void, Never>?
 
     func playStartAndWait() async {
         playStartCalled = true
+        playStartCallCount += 1
+        guard waitsForStartCompletion else { return }
+        await withCheckedContinuation { continuation in
+            startContinuation = continuation
+        }
+    }
+
+    func stopStart() {
+        stopStartCallCount += 1
+        resumeStartSound()
+    }
+
+    func finishStartSound() {
+        resumeStartSound()
+    }
+
+    private func resumeStartSound() {
+        startContinuation?.resume()
+        startContinuation = nil
     }
 
     func playEnd() {

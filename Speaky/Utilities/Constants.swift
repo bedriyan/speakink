@@ -24,7 +24,6 @@ enum Constants {
         static let pasteboardRestoreDelay: TimeInterval = 0.4
         static let hotkeyBriefPressThreshold: TimeInterval = 0.4
         static let permissionPollInterval: TimeInterval = 3.0
-        static let cancelWarningDuration: TimeInterval = 2.0
         static let transcriptionTimeout: TimeInterval = 120
     }
 

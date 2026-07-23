@@ -4,6 +4,41 @@ import Carbon
 import AppKit
 import os
 
+private func escapeEventTapCallback(
+    _: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let refcon else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
+
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        Task { @MainActor in
+            manager.restoreEscapeTapIfNeeded()
+        }
+        return Unmanaged.passUnretained(event)
+    }
+
+    guard HotkeyManager.shouldInterceptEscape(
+        eventType: type,
+        keyCode: event.getIntegerValueField(.keyboardEventKeycode),
+        isEnabled: true
+    ) else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    Task { @MainActor in
+        manager.handleMonitoredEscape()
+    }
+
+    // While recording, ESC belongs exclusively to Speaky.
+    return nil
+}
+
 extension KeyboardShortcuts.Name {
     nonisolated(unsafe) static let toggleRecording = Self("toggleRecording", default: .init(.space, modifiers: .option))
 }
@@ -12,6 +47,7 @@ extension KeyboardShortcuts.Name {
 @MainActor
 final class HotkeyManager: @unchecked Sendable {
     private let logger = Logger.speaky(category: "HotkeyManager")
+    private let usesSystemMonitoring: Bool
 
     enum HotkeyOption: String, CaseIterable, Identifiable {
         case rightOption = "rightOption"
@@ -59,15 +95,18 @@ final class HotkeyManager: @unchecked Sendable {
     // Callbacks
     var onToggleRecording: (() -> Void)?
     var onEscapePressed: (() -> Void)?
+    var onEscapeMonitoringAvailabilityChanged: ((Bool) -> Void)?
 
     // NSEvent monitors — nonisolated(unsafe) so deinit can clean them up
     private nonisolated(unsafe) var globalEventMonitor: Any?
     private nonisolated(unsafe) var localEventMonitor: Any?
+    private nonisolated(unsafe) var globalEscapeMonitor: Any?
     private nonisolated(unsafe) var localEscapeMonitor: Any?
 
-    // CGEvent tap for global ESC (more reliable than NSEvent global monitor)
+    // Active only while recording so ESC remains untouched at all other times.
     private nonisolated(unsafe) var escapeTapPort: CFMachPort?
     private nonisolated(unsafe) var escapeTapSource: CFRunLoopSource?
+    private(set) var isEscapeCancellationEnabled = false
 
     // Push-to-talk / hands-free state
     private var currentKeyState = false
@@ -81,6 +120,8 @@ final class HotkeyManager: @unchecked Sendable {
     private var shortcutCurrentKeyState = false
     private var lastShortcutTriggerTime: Date?
     private let shortcutCooldownInterval: TimeInterval = 0.3
+    private var suppressModifierUntilRelease = false
+    private var suppressShortcutUntilRelease = false
 
     // Fn key debounce — nonisolated(unsafe) so deinit can cancel it
     private nonisolated(unsafe) var fnDebounceTask: Task<Void, Never>?
@@ -90,10 +131,14 @@ final class HotkeyManager: @unchecked Sendable {
     // State exposed to UI
     private(set) var isRecordingViaHotkey = false
 
-    init() {
+    init(startMonitoring: Bool = true) {
+        self.usesSystemMonitoring = startMonitoring
+
         // Always use custom shortcut mode (modifier presets removed)
         self.selectedHotkey = .custom
         UserDefaults.standard.set(HotkeyOption.custom.rawValue, forKey: "selectedHotkey")
+
+        guard startMonitoring else { return }
 
         // Slight delay to ensure app is fully launched
         Task { @MainActor in
@@ -117,64 +162,117 @@ final class HotkeyManager: @unchecked Sendable {
     }
 
     private func setupEscapeMonitoring() {
-        // CGEvent tap captures ESC globally even when other apps consume the key event.
-        // NSEvent.addGlobalMonitorForEvents is only an observer and misses consumed events.
-        let callback: CGEventTapCallBack = { _, type, event, refcon in
-            // Re-enable tap if it gets disabled by the system
-            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                return Unmanaged.passUnretained(event)
-            }
+        installEscapeTapIfAvailable()
 
-            guard type == .keyDown,
-                  event.getIntegerValueField(.keyboardEventKeycode) == Int64(Constants.KeyCode.escape),
-                  let refcon else {
-                return Unmanaged.passUnretained(event)
-            }
-
-            let manager = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
-            Task { @MainActor in
-                manager.onEscapePressed?()
-            }
-
-            // Pass event through (don't consume it)
-            return Unmanaged.passUnretained(event)
+        if isEscapeCancellationEnabled && escapeTapPort == nil {
+            installGlobalEscapeFallback()
         }
+
+        // Local monitor for when Speaky itself is focused
+        localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  Self.shouldInterceptEscape(
+                    eventType: .keyDown,
+                    keyCode: Int64(event.keyCode),
+                    isEnabled: self.isEscapeCancellationEnabled
+                  ) else { return event }
+            self.handleMonitoredEscape()
+            return nil
+        }
+    }
+
+    private func installEscapeTapIfAvailable() {
+        guard escapeTapPort == nil else { return }
 
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         if let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
+            tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: .defaultTap,
             eventsOfInterest: CGEventMask(1 << CGEventType.keyDown.rawValue),
-            callback: callback,
+            callback: escapeEventTapCallback,
             userInfo: selfPtr
         ) {
             escapeTapPort = tap
             let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
             escapeTapSource = source
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-            CGEvent.tapEnable(tap: tap, enable: true)
-            logger.info("CGEvent tap for ESC installed successfully")
+            CGEvent.tapEnable(tap: tap, enable: isEscapeCancellationEnabled)
+            logger.info("Active session event tap for ESC installed successfully")
+            onEscapeMonitoringAvailabilityChanged?(true)
         } else {
-            logger.warning("Failed to create CGEvent tap for ESC — falling back to NSEvent monitor")
-            // Fallback: NSEvent global monitor (less reliable but better than nothing)
-            let fallbackMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard event.keyCode == Constants.KeyCode.escape else { return }
-                Task { @MainActor in
-                    self?.onEscapePressed?()
-                }
+            logger.warning("Failed to create active ESC event tap — will retry when recording starts")
+        }
+    }
+
+    private func installGlobalEscapeFallback() {
+        guard globalEscapeMonitor == nil else { return }
+        logger.warning("Using passive ESC monitor because the active event tap is unavailable")
+        globalEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == Constants.KeyCode.escape else { return }
+            Task { @MainActor in
+                self?.handleMonitoredEscape()
             }
-            globalEventMonitor = globalEventMonitor ?? fallbackMonitor
+        }
+        onEscapeMonitoringAvailabilityChanged?(false)
+    }
+
+    nonisolated static func shouldInterceptEscape(
+        eventType: CGEventType,
+        keyCode: Int64,
+        isEnabled: Bool
+    ) -> Bool {
+        isEnabled
+            && eventType == .keyDown
+            && keyCode == Int64(Constants.KeyCode.escape)
+    }
+
+    func setEscapeCancellationEnabled(_ enabled: Bool) {
+        guard isEscapeCancellationEnabled != enabled else { return }
+        isEscapeCancellationEnabled = enabled
+
+        if enabled && escapeTapPort == nil && usesSystemMonitoring {
+            // Accessibility may have been granted since launch.
+            installEscapeTapIfAvailable()
         }
 
-        // Local monitor for when Speaky itself is focused
-        localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == Constants.KeyCode.escape else { return event }
-            Task { @MainActor in
-                self?.onEscapePressed?()
-            }
-            return event
+        if let tap = escapeTapPort {
+            CGEvent.tapEnable(tap: tap, enable: enabled)
+        } else if enabled && usesSystemMonitoring {
+            installGlobalEscapeFallback()
         }
+
+        if !enabled, let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalEscapeMonitor = nil
+        }
+    }
+
+    func handleMonitoredEscape() {
+        guard isEscapeCancellationEnabled else { return }
+        setEscapeCancellationEnabled(false)
+        cancelActiveHotkeyInteraction()
+        onEscapePressed?()
+    }
+
+    private func cancelActiveHotkeyInteraction() {
+        suppressModifierUntilRelease = currentKeyState || pendingFnKeyState == true
+        suppressShortcutUntilRelease = shortcutCurrentKeyState
+        fnDebounceTask?.cancel()
+        fnDebounceTask = nil
+        pendingFnKeyState = nil
+        pendingFnEventTime = nil
+        currentKeyState = false
+        keyPressEventTime = nil
+        isHandsFreeMode = false
+        shortcutCurrentKeyState = false
+        shortcutKeyPressEventTime = nil
+        isShortcutHandsFreeMode = false
+    }
+
+    fileprivate func restoreEscapeTapIfNeeded() {
+        guard isEscapeCancellationEnabled, let tap = escapeTapPort else { return }
+        CGEvent.tapEnable(tap: tap, enable: true)
     }
 
     private func setupModifierKeyMonitoring() {
@@ -253,6 +351,13 @@ final class HotkeyManager: @unchecked Sendable {
     /// - Short press (<0.4s): enters hands-free mode (tap to start, tap to stop)
     /// - Long press (≥0.4s): push-to-talk (hold to record, release to stop)
     private func processKeyPress(isKeyPressed: Bool, eventTime: TimeInterval) async {
+        if suppressModifierUntilRelease {
+            if !isKeyPressed {
+                suppressModifierUntilRelease = false
+            }
+            return
+        }
+
         guard isKeyPressed != currentKeyState else { return }
         currentKeyState = isKeyPressed
 
@@ -286,7 +391,9 @@ final class HotkeyManager: @unchecked Sendable {
 
     // MARK: - Custom shortcut handling
 
-    private func handleCustomShortcutKeyDown(eventTime: TimeInterval) async {
+    func handleCustomShortcutKeyDown(eventTime: TimeInterval) async {
+        guard !suppressShortcutUntilRelease else { return }
+
         // Cooldown to prevent double-triggers
         if let lastTrigger = lastShortcutTriggerTime,
            Date().timeIntervalSince(lastTrigger) < shortcutCooldownInterval {
@@ -307,7 +414,12 @@ final class HotkeyManager: @unchecked Sendable {
         triggerToggle()
     }
 
-    private func handleCustomShortcutKeyUp(eventTime: TimeInterval) async {
+    func handleCustomShortcutKeyUp(eventTime: TimeInterval) async {
+        if suppressShortcutUntilRelease {
+            suppressShortcutUntilRelease = false
+            return
+        }
+
         guard shortcutCurrentKeyState else { return }
         shortcutCurrentKeyState = false
 
@@ -340,6 +452,10 @@ final class HotkeyManager: @unchecked Sendable {
             NSEvent.removeMonitor(monitor)
             localEventMonitor = nil
         }
+        if let monitor = globalEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalEscapeMonitor = nil
+        }
         if let monitor = localEscapeMonitor {
             NSEvent.removeMonitor(monitor)
             localEscapeMonitor = nil
@@ -365,6 +481,8 @@ final class HotkeyManager: @unchecked Sendable {
         shortcutCurrentKeyState = false
         shortcutKeyPressEventTime = nil
         isShortcutHandsFreeMode = false
+        suppressModifierUntilRelease = false
+        suppressShortcutUntilRelease = false
     }
 
     var isShortcutConfigured: Bool {
@@ -378,6 +496,7 @@ final class HotkeyManager: @unchecked Sendable {
         // Release system resources that would otherwise leak.
         if let monitor = globalEventMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localEventMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = globalEscapeMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = localEscapeMonitor { NSEvent.removeMonitor(monitor) }
         if let source = escapeTapSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)

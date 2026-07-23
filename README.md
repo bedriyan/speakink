@@ -94,6 +94,16 @@ xcodebuild -project Speaky.xcodeproj -scheme Speaky -configuration Release build
 ./build.sh separate     # Both architectures + DMGs
 ```
 
+### Manual global Escape verification
+
+macOS does not allow automated tests to grant Accessibility permission, so verify global cancellation manually before release:
+
+1. Grant Accessibility permission to the exact Speaky build under **System Settings → Privacy & Security → Accessibility**.
+2. Start recording, focus another application, and press Escape once.
+3. Confirm recording is cancelled and the focused application does not also receive Escape.
+4. Confirm Escape behaves normally when Speaky is not recording.
+5. Hold the recording shortcut, press Escape, then release the shortcut and confirm recording does not restart.
+
 ## Architecture
 
 ```
@@ -159,7 +169,7 @@ Speaky/
 
 - macOS 15.0+ (Sequoia)
 - Microphone permission
-- Accessibility permission (for auto-paste)
+- Accessibility permission (for auto-paste and global Escape cancellation)
 
 ## License
 
