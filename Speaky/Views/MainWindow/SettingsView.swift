@@ -145,7 +145,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Accessibility Access")
                             .font(.body)
-                        Text("Required for auto-paste.")
+                        Text("Required for auto-paste and global Escape cancellation.")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
                     }

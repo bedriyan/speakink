@@ -18,16 +18,20 @@ private let appStateLogger = Logger.speaky(category: "AppState")
 @Observable
 @MainActor
 final class AppState {
-    var state: RecordingState = .idle
+    var state: RecordingState = .idle {
+        didSet {
+            hotkeyManager.setEscapeCancellationEnabled(state == .recording)
+        }
+    }
     var lastTranscription: String?
     var audioLevels: [Float] = Array(repeating: 0, count: 30)
     var recordingStartTime: Date?
-    var showingCancelWarning = false
     var showingCelebration = false
     var permissionWarning: String?
     var pasteWarning: String?
-    private var cancelWarningDismissTask: Task<Void, Never>?
     private var pasteWarningDismissTask: Task<Void, Never>?
+    private var escapeMonitoringUnavailable = false
+    private var recordingGeneration: UInt = 0
 
     let settings = AppSettings()
     let hotkeyManager = HotkeyManager()
@@ -52,6 +56,11 @@ final class AppState {
         hotkeyManager.onEscapePressed = { [weak self] in
             self?.handleEscapePressed()
         }
+        hotkeyManager.onEscapeMonitoringAvailabilityChanged = { [weak self] isAvailable in
+            guard let self else { return }
+            escapeMonitoringUnavailable = !isAvailable
+            refreshPermissionWarning()
+        }
         coordinator.deviceGuard.onDeviceLost = { [weak self] in
             guard let self else { return }
             if self.isRecording {
@@ -64,6 +73,10 @@ final class AppState {
 
     /// Check permissions on launch and surface a warning banner if any are revoked.
     func checkPermissionsOnLaunch() {
+        refreshPermissionWarning()
+    }
+
+    private func refreshPermissionWarning() {
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let accessibilityGranted = AXIsProcessTrusted()
 
@@ -72,7 +85,9 @@ final class AppState {
         } else if micStatus == .denied {
             permissionWarning = "Microphone access was revoked. Go to Settings > Permissions to restore it."
         } else if !accessibilityGranted {
-            permissionWarning = "Accessibility access is missing — auto-paste won't work. Go to Settings > Permissions to enable it."
+            permissionWarning = "Accessibility access is missing — auto-paste and global Escape cancellation won't work. Go to Settings > Permissions to enable it."
+        } else if escapeMonitoringUnavailable {
+            permissionWarning = "Global Escape cancellation is unavailable. Re-enable Accessibility for Speaky in Settings > Permissions, then try again."
         } else {
             permissionWarning = nil
         }
@@ -135,8 +150,9 @@ final class AppState {
             }
 
             state = .recording
+            recordingGeneration &+= 1
+            let generation = recordingGeneration
             recordingStartTime = Date()
-            showingCancelWarning = false
             showingCelebration = false
             audioLevels = Array(repeating: 0, count: 30)
 
@@ -144,8 +160,9 @@ final class AppState {
 
             // Play start sound (if enabled), then apply system-level mute after it finishes.
             // Media is already paused above, so background audio is silent during the sound.
-            Task {
-                await coordinator.playStartSoundAndMute()
+            coordinator.startRecordingFeedback { [weak self] in
+                guard let self else { return false }
+                return isRecording && recordingGeneration == generation
             }
 
         } catch {
@@ -304,25 +321,10 @@ final class AppState {
 
     func handleEscapePressed() {
         guard isRecording else { return }
-
-        if showingCancelWarning {
-            // Second ESC → cancel recording
-            cancelRecording()
-        } else {
-            // First ESC → show warning
-            showingCancelWarning = true
-            cancelWarningDismissTask?.cancel()
-            cancelWarningDismissTask = Task {
-                try? await Task.sleep(for: .seconds(Constants.Timing.cancelWarningDuration))
-                guard !Task.isCancelled else { return }
-                self.showingCancelWarning = false
-            }
-        }
+        cancelRecording()
     }
 
     func cancelRecording() {
-        showingCancelWarning = false
-        cancelWarningDismissTask?.cancel()
         coordinator.cancelRecording()
         state = .idle
         audioLevels = Array(repeating: 0, count: 30)

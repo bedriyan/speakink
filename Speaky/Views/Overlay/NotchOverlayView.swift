@@ -26,20 +26,6 @@ struct NotchRecordingView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                } else if appState.showingCancelWarning {
-                    // Cancel warning
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.red)
-
-                        Text("Press ESC again to cancel")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.red)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .transition(.opacity)
                 } else {
                     // Recording — wide bar, Speaky left, all controls single row right
                     HStack(spacing: 0) {

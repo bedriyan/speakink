@@ -13,16 +13,40 @@ final class SoundEffectService {
             Self.logger.warning("Sound file not found: start.m4a")
             return
         }
+
         do {
-            startPlayer = try AVAudioPlayer(contentsOf: url)
-            startPlayer?.volume = 0.15
-            startPlayer?.play()
+            let player = try AVAudioPlayer(contentsOf: url)
+            startPlayer?.stop()
+            startPlayer = player
+            player.volume = 0.15
+            player.prepareToPlay()
+
+            guard player.play() else {
+                Self.logger.warning("Failed to start playback: start.m4a")
+                startPlayer = nil
+                return
+            }
+
+            defer {
+                if startPlayer === player {
+                    startPlayer = nil
+                }
+            }
+
             // Wait for the sound to finish so caller can mute after
-            let duration = startPlayer?.duration ?? 2.0
-            try? await Task.sleep(for: .seconds(duration))
+            do {
+                try await Task.sleep(for: .seconds(player.duration))
+            } catch {
+                player.stop()
+            }
         } catch {
             Self.logger.warning("Failed to play start sound: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    func stopStart() {
+        startPlayer?.stop()
+        startPlayer = nil
     }
 
     func playEnd() {
