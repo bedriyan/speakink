@@ -38,6 +38,18 @@ struct SettingsView: View {
                 ))
             }
 
+            // Application
+            Section("Application") {
+                Toggle("Show in Dock", isOn: Binding(
+                    get: { settings.showInDock },
+                    set: { settings.showInDock = $0 }
+                ))
+
+                Text("When disabled, Speaky only appears in the Dock while its window is open.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+
             // Behavior
             Section("Behavior") {
                 Toggle("Auto-paste after transcription", isOn: Binding(
