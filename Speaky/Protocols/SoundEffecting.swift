@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 protocol SoundEffecting: AnyObject {
     func playStartAndWait() async
+    func stopStart()
     func playEnd()
 }
 
