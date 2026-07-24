@@ -59,7 +59,7 @@ final class AppState {
         hotkeyManager.onEscapeMonitoringAvailabilityChanged = { [weak self] isAvailable in
             guard let self else { return }
             escapeMonitoringUnavailable = !isAvailable
-            refreshPermissionWarning()
+            refreshPermissionStatus()
         }
         coordinator.deviceGuard.onDeviceLost = { [weak self] in
             guard let self else { return }
@@ -71,25 +71,38 @@ final class AppState {
         }
     }
 
-    /// Check permissions on launch and surface a warning banner if any are revoked.
-    func checkPermissionsOnLaunch() {
-        refreshPermissionWarning()
-    }
-
-    private func refreshPermissionWarning() {
+    /// Refresh permission-dependent services and the warning shown in the main window.
+    func refreshPermissionStatus() {
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let accessibilityGranted = AXIsProcessTrusted()
 
-        if micStatus == .denied && !accessibilityGranted {
-            permissionWarning = "Microphone and Accessibility permissions are missing. Go to Settings > Permissions to fix this."
-        } else if micStatus == .denied {
-            permissionWarning = "Microphone access was revoked. Go to Settings > Permissions to restore it."
-        } else if !accessibilityGranted {
-            permissionWarning = "Accessibility access is missing — auto-paste and global Escape cancellation won't work. Go to Settings > Permissions to enable it."
-        } else if escapeMonitoringUnavailable {
-            permissionWarning = "Global Escape cancellation is unavailable. Re-enable Accessibility for Speaky in Settings > Permissions, then try again."
-        } else {
-            permissionWarning = nil
+        if accessibilityGranted {
+            escapeMonitoringUnavailable = !hotkeyManager.refreshEscapeMonitoringAvailability()
+        }
+
+        permissionWarning = Self.permissionWarningMessage(
+            microphoneDenied: micStatus == .denied,
+            accessibilityGranted: accessibilityGranted,
+            escapeMonitoringAvailable: !escapeMonitoringUnavailable
+        )
+    }
+
+    nonisolated static func permissionWarningMessage(
+        microphoneDenied: Bool,
+        accessibilityGranted: Bool,
+        escapeMonitoringAvailable: Bool
+    ) -> String? {
+        switch (microphoneDenied, accessibilityGranted, escapeMonitoringAvailable) {
+        case (true, false, _):
+            "Microphone and Accessibility permissions are missing. Go to Settings > Permissions to fix this."
+        case (true, true, _):
+            "Microphone access was revoked. Go to Settings > Permissions to restore it."
+        case (false, false, _):
+            "Accessibility access is missing — auto-paste and global Escape cancellation won't work. Go to Settings > Permissions to enable it."
+        case (false, true, false):
+            "Global Escape cancellation is unavailable. Re-enable Accessibility for Speaky in Settings > Permissions, then try again."
+        case (false, true, true):
+            nil
         }
     }
 

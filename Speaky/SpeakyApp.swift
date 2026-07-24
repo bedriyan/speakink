@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AppKit
 
 @main
 struct SpeakyApp: App {
@@ -69,10 +70,13 @@ struct ContentRootView: View {
             if hasCompletedOnboarding {
                 appState.warmUpEngine()
                 // Check if permissions were revoked since last launch
-                appState.checkPermissionsOnLaunch()
+                appState.refreshPermissionStatus()
             }
             // Start Sparkle updater
             appState.updaterManager.startIfEnabled(checkForUpdates: appState.settings.checkForUpdates)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            appState.refreshPermissionStatus()
         }
     }
 }

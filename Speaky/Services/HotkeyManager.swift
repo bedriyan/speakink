@@ -198,6 +198,10 @@ final class HotkeyManager: @unchecked Sendable {
             escapeTapSource = source
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: isEscapeCancellationEnabled)
+            if let monitor = globalEscapeMonitor {
+                NSEvent.removeMonitor(monitor)
+                globalEscapeMonitor = nil
+            }
             logger.info("Active session event tap for ESC installed successfully")
             onEscapeMonitoringAvailabilityChanged?(true)
         } else {
@@ -246,6 +250,13 @@ final class HotkeyManager: @unchecked Sendable {
             NSEvent.removeMonitor(monitor)
             globalEscapeMonitor = nil
         }
+    }
+
+    /// Retry the active Escape tap after Accessibility permission changes.
+    func refreshEscapeMonitoringAvailability() -> Bool {
+        guard usesSystemMonitoring else { return true }
+        installEscapeTapIfAvailable()
+        return escapeTapPort != nil
     }
 
     func handleMonitoredEscape() {
