@@ -89,15 +89,6 @@ final class AppState {
         coordinator.observeSystemWake()
     }
 
-    var menuBarIconName: String {
-        switch state {
-        case .idle: "mic.fill"
-        case .recording: "mic.badge.waveform.fill"
-        case .transcribing: "ellipsis.circle"
-        case .error: "exclamationmark.triangle"
-        }
-    }
-
     var isRecording: Bool { state == .recording }
     var isTranscribing: Bool { state == .transcribing }
 

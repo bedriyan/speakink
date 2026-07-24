@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+  <defs>
+    <mask id="face">
+      <rect width="18" height="18" fill="white"/>
+      <circle cx="7.25" cy="10.25" r="0.65" fill="black"/>
+      <circle cx="10.75" cy="10.25" r="0.65" fill="black"/>
+      <path d="M7.55 12.55C8.45 13.35 9.55 13.35 10.45 12.55" fill="none" stroke="black" stroke-width="0.75" stroke-linecap="round"/>
+      <circle cx="10.15" cy="2.35" r="0.42" fill="black"/>
+    </mask>
+  </defs>
+  <g fill="black" mask="url(#face)">
+    <path d="M8.55 5.25L9.25 0.65L12.55 2.3L10.35 5.85Z"/>
+    <path d="M7.95 4.95C6.45 6.25 4.65 8.55 4.35 11.2C4.05 13.95 5.75 16.45 9 16.45C12.25 16.45 13.95 13.95 13.65 11.2C13.35 8.55 11.55 6.25 10.05 4.95C9.45 4.45 8.55 4.45 7.95 4.95Z"/>
+    <path d="M4.85 9.7C3.5 9.65 2.55 10.75 2.65 12.2C2.75 13.45 3.45 14.2 4.25 14.05C4.9 13.9 5.2 13.2 5.3 12.35Z"/>
+    <path d="M13.15 9.7C14.5 9.65 15.45 10.75 15.35 12.2C15.25 13.45 14.55 14.2 13.75 14.05C13.1 13.9 12.8 13.2 12.7 12.35Z"/>
+    <ellipse cx="7.35" cy="16.25" rx="1.35" ry="1.05"/>
+    <ellipse cx="10.65" cy="16.25" rx="1.35" ry="1.05"/>
+  </g>
+</svg>

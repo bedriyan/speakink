@@ -26,7 +26,8 @@ struct SpeakyApp: App {
             MenuBarView()
                 .environment(appState)
         } label: {
-            Image(systemName: appState.menuBarIconName)
+            Image("SpeakyMenuBarIcon")
+                .accessibilityLabel("Speaky")
         }
     }
 
